@@ -1,13 +1,16 @@
 import Matter from 'matter-js';
 import type { Mood, Particle, GameState, ToolItem } from '../types';
 import { ITEMS, DEFAULT_ITEMS } from './items';
+import { ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS, BUDDY_RADIUS } from './constants';
+import { drawRoom, drawBuddy, drawProps, drawParticles, drawMoneyPopups, drawMoodIndicator, drawHUD } from './draw';
+import { createAIState, updateAI, type AIState } from './ai';
 
-const { Engine, World, Bodies, Body, Composite, Vector, Constraint } = Matter;
+const { Engine, World, Bodies, Body, Vector, Constraint } = Matter;
 
-const ROOM_WIDTH = 800;
-const ROOM_HEIGHT = 500;
-const WALL_THICKNESS = 20;
-const BUDDY_RADIUS = 18;
+const bd = Bodies as unknown as {
+  rectangle: (x: number, y: number, w: number, h: number, opts?: Record<string, unknown>) => Matter.Body;
+  circle: (x: number, y: number, r: number, opts?: Record<string, unknown>) => Matter.Body;
+};
 
 export interface GameEngineState {
   buddyBodies: Matter.Body[];
@@ -35,8 +38,11 @@ export class GameEngine {
   onMoneyEarned: ((amount: number) => void) | null = null;
   mousePos: { x: number; y: number } = { x: 0, y: 0 };
   isMouseDown = false;
+  dragBody: Matter.Body | null = null;
   shootTimer = 0;
   lastTimestamp = 0;
+  ai: AIState;
+  props: Matter.Body[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -47,13 +53,15 @@ export class GameEngine {
       gravity: { x: 0, y: 1.5, scale: 0.001 },
     });
 
+    this.ai = createAIState();
     this.room = this.createRoom();
     this.state = this.createInitialState();
     const { bodies, constraints } = this.createBuddy();
     this.state.buddyBodies = bodies;
     this.state.buddyConstraints = constraints;
+    this.props = this.createProps();
 
-    World.add(this.engine.world, [...this.room, ...bodies, ...constraints]);
+    World.add(this.engine.world, [...this.room, ...bodies, ...constraints, ...this.props]);
   }
 
   private createInitialState(): GameEngineState {
@@ -95,12 +103,14 @@ export class GameEngine {
     const r = BUDDY_RADIUS;
     const constraints: Matter.Constraint[] = [];
     const parts: Matter.Body[] = [];
+    const group = Body.nextGroup(true);
 
     const opts: Record<string, unknown> = {
       restitution: 0.35,
       friction: 0.4,
       frictionAir: 0.015,
       density: 0.002,
+      collisionFilter: { group },
     };
 
     const head = bd.circle(cx, cy - 55, r * 1.15, { ...opts, label: 'buddy-head', density: 0.0015 });
@@ -113,283 +123,24 @@ export class GameEngine {
     parts.push(head, torso, leftArm, rightArm, leftLeg, rightLeg);
 
     constraints.push(
-      Constraint.create({ bodyA: head, bodyB: torso, stiffness: 0.8, damping: 0.1 }),
-      Constraint.create({ bodyA: leftArm, bodyB: torso, stiffness: 0.6, damping: 0.15 }),
-      Constraint.create({ bodyA: rightArm, bodyB: torso, stiffness: 0.6, damping: 0.15 }),
-      Constraint.create({ bodyA: leftLeg, bodyB: torso, stiffness: 0.7, damping: 0.1 }),
-      Constraint.create({ bodyA: rightLeg, bodyB: torso, stiffness: 0.7, damping: 0.1 }),
+      Constraint.create({ bodyA: head, bodyB: torso, stiffness: 0.9, damping: 0.08 }),
+      Constraint.create({ bodyA: leftArm, bodyB: torso, stiffness: 0.7, damping: 0.12 }),
+      Constraint.create({ bodyA: rightArm, bodyB: torso, stiffness: 0.7, damping: 0.12 }),
+      Constraint.create({ bodyA: leftLeg, bodyB: torso, stiffness: 0.8, damping: 0.08 }),
+      Constraint.create({ bodyA: rightLeg, bodyB: torso, stiffness: 0.8, damping: 0.08 }),
     );
 
     return { bodies: parts, constraints };
   }
 
-  // ── Drawing ────────────────────────────────────
-
-  private drawRoom(): void {
-    const ctx = this.ctx;
-    const shake = this.state.screenshake;
-    if (shake > 0) {
-      ctx.translate(
-        (Math.random() - 0.5) * shake * 2,
-        (Math.random() - 0.5) * shake * 2,
-      );
-    }
-
-    const grad = ctx.createLinearGradient(0, 0, 0, ROOM_HEIGHT);
-    grad.addColorStop(0, '#1a1a2e');
-    grad.addColorStop(1, '#0f0f1a');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
-
-    for (let x = 0; x < ROOM_WIDTH; x += 40) {
-      for (let y = 0; y < ROOM_HEIGHT; y += 40) {
-        ctx.fillStyle = (x / 40 + y / 40) % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)';
-        ctx.fillRect(x, y, 40, 40);
-      }
-    }
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1, 1, ROOM_WIDTH - 2, ROOM_HEIGHT - 2);
-  }
-
-  private drawBuddy(): void {
-    const ctx = this.ctx;
-    const parts = this.state.buddyBodies;
-    const color = this.state.baseColor;
-
-    for (const part of parts) {
-      const verts = part.vertices;
-      ctx.beginPath();
-      ctx.moveTo(verts[0].x, verts[0].y);
-      for (let j = 1; j < verts.length; j++) ctx.lineTo(verts[j].x, verts[j].y);
-      ctx.closePath();
-
-      const r = part.circleRadius || 14;
-      const g = ctx.createRadialGradient(
-        part.position.x - r * 0.25, part.position.y - r * 0.25, 2,
-        part.position.x, part.position.y, r
-      );
-      g.addColorStop(0, this.lighten(color, 40));
-      g.addColorStop(0.7, color);
-      g.addColorStop(1, this.darken(color, 20));
-      ctx.fillStyle = g;
-      ctx.fill();
-
-      ctx.strokeStyle = this.darken(color, 40);
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      if (part.label === 'buddy-arm') {
-        ctx.beginPath();
-        ctx.arc(part.position.x, part.position.y, (part.circleRadius || 8) * 0.6, 0, Math.PI * 2);
-        ctx.fillStyle = this.lighten(color, 20);
-        ctx.fill();
-      }
-
-      if (part.label === 'buddy-leg') {
-        ctx.fillStyle = this.darken(color, 15);
-        ctx.beginPath();
-        ctx.arc(part.position.x, part.position.y + 2, (part.circleRadius || 10) * 0.7, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    const head = parts.find(p => p.label === 'buddy-head');
-    if (head) this.drawFace(head.position.x, head.position.y);
-  }
-
-  private drawFace(x: number, y: number): void {
-    const ctx = this.ctx;
-    const mood = this.state.mood;
-    const eyeOff = 7;
-    const eyeY = y - 4;
-
-    ctx.save();
-
-    const glow = mood === 'happy' ? '#2ecc7122' : mood === 'angry' ? '#e74c3c22' : 'transparent';
-    if (glow !== 'transparent') {
-      ctx.shadowColor = glow;
-      ctx.shadowBlur = 20;
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(x, eyeY + 4, 25, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.ellipse(x - eyeOff, eyeY, 4.5, 5.5, 0, 0, Math.PI * 2);
-    ctx.ellipse(x + eyeOff, eyeY, 4.5, 5.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const px = mood === 'scared' ? 1.5 : mood === 'angry' ? -1 : 0;
-    ctx.fillStyle = '#1a1a2e';
-    ctx.beginPath();
-    ctx.arc(x - eyeOff + px, eyeY, 2.2, 0, Math.PI * 2);
-    ctx.arc(x + eyeOff + px, eyeY, 2.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (mood === 'scared') {
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(x - eyeOff - 0.5, eyeY - 0.5, 0.8, 0, Math.PI * 2);
-      ctx.arc(x + eyeOff - 0.5, eyeY - 0.5, 0.8, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.strokeStyle = '#1a1a2e';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-
-    switch (mood) {
-      case 'happy':
-        ctx.arc(x, y + 7, 8, 0.15, Math.PI - 0.15);
-        break;
-      case 'sad':
-        ctx.arc(x, y + 18, 8, Math.PI + 0.3, Math.PI * 2 - 0.3);
-        break;
-      case 'angry':
-        ctx.moveTo(x - 8, y + 9);
-        ctx.lineTo(x, y + 3);
-        ctx.lineTo(x + 8, y + 9);
-        break;
-      case 'scared':
-        ctx.arc(x, y + 11, 6, 0, Math.PI * 2);
-        break;
-      default:
-        ctx.moveTo(x - 6, y + 6);
-        ctx.lineTo(x + 6, y + 6);
-    }
-    ctx.stroke();
-
-    if (mood === 'angry') {
-      ctx.strokeStyle = '#e74c3c';
-      ctx.lineWidth = 2.5;
-      const brow = eyeY - 7;
-      ctx.beginPath();
-      ctx.moveTo(x - eyeOff - 6, brow + 3);
-      ctx.lineTo(x - eyeOff + 2, brow - 2);
-      ctx.moveTo(x + eyeOff + 6, brow + 3);
-      ctx.lineTo(x + eyeOff - 2, brow - 2);
-      ctx.stroke();
-    }
-
-    if (mood === 'sad') {
-      ctx.fillStyle = 'rgba(52,152,219,0.3)';
-      ctx.beginPath();
-      ctx.arc(x - eyeOff, eyeY + 10, 3, 0, Math.PI * 2);
-      ctx.arc(x + eyeOff, eyeY + 10, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
-  }
-
-  private drawParticles(): void {
-    const ctx = this.ctx;
-    for (const p of this.state.particles) {
-      const a = p.life / p.maxLife;
-      ctx.globalAlpha = a * 0.8;
-      ctx.fillStyle = p.color;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 6;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * a, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-  }
-
-  private drawMoneyPopups(): void {
-    const ctx = this.ctx;
-    for (const p of this.state.moneyPopups) {
-      const a = p.life / 40;
-      ctx.globalAlpha = a;
-      ctx.fillStyle = '#ffd700';
-      ctx.font = 'bold 14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.shadowColor = '#ffd700';
-      ctx.shadowBlur = 8;
-      ctx.fillText(p.text, p.x, p.y - (1 - a) * 30);
-    }
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
-  }
-
-  private drawHUD(): void {
-    const ctx = this.ctx;
-    const pad = 12;
-
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    this.roundRect(ctx, ROOM_WIDTH - 170, pad, 158, 34, 8);
-    ctx.fill();
-
-    ctx.fillStyle = '#ffd700';
-    ctx.font = 'bold 18px sans-serif';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`$${Math.floor(this.state.money)}`, ROOM_WIDTH - 20, pad + 17);
-
-    ctx.fillStyle = this.state.health > 30 ? '#2ecc71' : '#e74c3c';
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`❤ ${Math.max(0, Math.floor(this.state.health))}`, ROOM_WIDTH - 162, pad + 17);
-
-    const hpPct = this.state.health / 100;
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    this.roundRect(ctx, ROOM_WIDTH - 162, pad + 22, 140, 5, 3);
-    ctx.fill();
-    ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
-    this.roundRect(ctx, ROOM_WIDTH - 162, pad + 22, 140 * hpPct, 5, 3);
-    ctx.fill();
-
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(`🔧 ${this.state.activeItem.name}`, ROOM_WIDTH / 2, ROOM_HEIGHT - 8);
-  }
-
-  private drawMoodIndicator(): void {
-    const ctx = this.ctx;
-    const x = 24;
-    const y = 24;
-    const r = 22;
-
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.beginPath();
-    ctx.arc(x, y, r + 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    const moodColors: Record<Mood, string> = {
-      happy: '#2ecc71',
-      neutral: '#f39c12',
-      sad: '#3498db',
-      angry: '#e74c3c',
-      scared: '#9b59b6',
-    };
-
-    ctx.fillStyle = moodColors[this.state.mood];
-    ctx.beginPath();
-    ctx.arc(x, y, r - 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const emojis: Record<Mood, string> = {
-      happy: '😊',
-      neutral: '😐',
-      sad: '😢',
-      angry: '😠',
-      scared: '😨',
-    };
-    ctx.fillText(emojis[this.state.mood], x, y + 1);
+  private createProps(): Matter.Body[] {
+    const ball = bd.circle(650, 350, 14, {
+      restitution: 0.8, friction: 0.3, frictionAir: 0.01, density: 0.002, label: 'prop',
+    });
+    const box = bd.rectangle(200, 420, 36, 36, {
+      restitution: 0.2, friction: 0.8, frictionAir: 0.02, density: 0.004, label: 'prop',
+    });
+    return [ball, box];
   }
 
   // ── Particles ───────────────────────────────────
@@ -461,12 +212,8 @@ export class GameEngine {
     else if (damage > 5) this.state.mood = 'sad';
     else if (damage < 0) this.state.mood = 'happy';
     else if (Math.random() < 0.1) this.state.mood = 'scared';
-    this.state.moodTimer = 90;
+    this.state.moodTimer = 30 + Math.floor(Math.random() * 30);
     this.emitState();
-  }
-
-  private emitState(): void {
-    this.onStateChange?.({ money: this.state.money, mood: this.state.mood } as Partial<GameState>);
   }
 
   private respawnBuddy(): void {
@@ -490,30 +237,31 @@ export class GameEngine {
 
   // ── Interactions ────────────────────────────────
 
-  private handleInteraction(x: number, y: number): void {
+  private handleInteraction(x: number, y: number, isAutoFire = false): void {
     const item = this.state.activeItem;
     const buddies = this.state.buddyBodies;
 
     let hit = false;
     for (const b of buddies) {
-      if (Matter.Bounds.contains(b.bounds, { x, y })) { hit = true; break; }
+      const d = Vector.magnitude(Vector.sub(b.position, { x, y }));
+      if (d < 70) { hit = true; break; }
     }
     if (!hit) return;
+
+    if (isAutoFire && item.id !== 'machinegun' && item.id !== 'flamethrower') return;
 
     switch (item.id) {
       case 'fist': {
         for (const b of buddies) {
           const d = Vector.magnitude(Vector.sub(b.position, { x, y }));
-          if (d < 60) {
+          if (d < 65) {
             const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-            Body.applyForce(b, b.position, {
-              x: dir.x * 0.025 * (60 / Math.max(d, 15)),
-              y: (dir.y * 0.025 - 0.015) * (60 / Math.max(d, 15)),
-            });
+            const power = 0.04 * (65 / Math.max(d, 15));
+            Body.applyForce(b, b.position, { x: dir.x * power, y: (dir.y * power) - 0.025 });
           }
         }
         this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#fff', 6);
+        this.spawnParticles(x, y, '#ffffff', 10);
         this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
         this.state.mood = 'angry';
         this.state.moodTimer = 30;
@@ -522,200 +270,267 @@ export class GameEngine {
       case 'tickle': {
         for (const b of buddies) {
           Body.applyForce(b, b.position, {
-            x: (Math.random() - 0.5) * 0.005,
-            y: -0.005 - Math.random() * 0.005,
+            x: (Math.random() - 0.5) * 0.003,
+            y: -0.003 - Math.random() * 0.002,
           });
         }
         this.state.mood = 'happy';
-        this.state.money += 1;
-        this.onMoneyEarned?.(1);
-        this.spawnParticles(x, y, '#ffd700', 6);
-        this.spawnMoneyPopup(x, y - 20, 1);
+        this.state.moodTimer = 60;
+        this.state.money += 2;
+        this.onMoneyEarned?.(2);
+        this.spawnParticles(x - 10, y + 15, '#ff6b9d', 3);
+        this.spawnParticles(x + 10, y + 15, '#ffd700', 3);
+        this.spawnMoneyPopup(x, y - 20, 2);
         break;
       }
       case 'grenade': {
-        this.spawnExplosion(x, y, 28);
-        this.spawnMoneyPopup(x, y - 30, 15);
-        for (const b of buddies) {
-          Body.applyForce(b, b.position, {
-            x: (Math.random() - 0.5) * 0.04,
-            y: -0.04 - Math.random() * 0.03,
-          });
-        }
+        this.spawnExplosion(x, y, 30);
+        this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'pistol': {
         const head = buddies.find(b => b.label === 'buddy-head') || buddies[0];
-        const dir = Vector.normalise(Vector.sub(head.position, this.mousePos));
-        const force = 0.003 * item.damage;
-        Body.applyForce(head, head.position, { x: dir.x * force, y: dir.y * force - force * 0.3 });
+        const dir = Vector.normalise(Vector.sub(head.position, { x: this.mousePos.x, y: this.mousePos.y }));
+        const power = 0.06;
+        Body.applyForce(head, head.position, { x: dir.x * power, y: dir.y * power - power * 0.15 });
         this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#ffdd00', 5);
-        this.spawnParticles(x, y, '#ff8800', 3);
+        this.spawnParticles(this.mousePos.x, this.mousePos.y, '#ffdd00', 8);
+        this.spawnParticles(this.mousePos.x, this.mousePos.y, '#ffffff', 4);
+        this.spawnParticles(head.position.x, head.position.y, '#ff8800', 6);
+        this.state.screenshake = Math.min(this.state.screenshake + 3, 8);
         this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'shotgun': {
         for (let i = 0; i < 5; i++) {
-          const sx = x + (Math.random() - 0.5) * 50;
-          const sy = y + (Math.random() - 0.5) * 50;
           const target = buddies[Math.floor(Math.random() * buddies.length)];
-          const dir = Vector.normalise(Vector.sub(target.position, { x: sx, y: sy }));
+          const spreadX = (Math.random() - 0.5) * 0.025;
+          const spreadY = (Math.random() - 0.5) * 0.025;
+          const dir = Vector.normalise(Vector.sub(target.position, {
+            x: x + (Math.random() - 0.5) * 50,
+            y: y + (Math.random() - 0.5) * 50,
+          }));
           Body.applyForce(target, target.position, {
-            x: dir.x * 0.003 * item.damage,
-            y: dir.y * 0.003 * item.damage - 0.002,
+            x: dir.x * 0.06 + spreadX,
+            y: dir.y * 0.06 + spreadY - 0.015,
           });
         }
         this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#ff8800', 15);
-        this.state.screenshake = Math.min(this.state.screenshake + 4, 10);
+        this.spawnParticles(x, y, '#ff8800', 20);
+        this.spawnParticles(x, y, '#ffcc00', 10);
+        this.state.screenshake = Math.min(this.state.screenshake + 6, 12);
         this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'machinegun': {
-        const head = buddies.find(b => b.label === 'buddy-head') || buddies[0];
-        const dir = Vector.normalise(Vector.sub(head.position, this.mousePos));
-        Body.applyForce(head, head.position, {
-          x: dir.x * 0.002 * item.damage,
-          y: dir.y * 0.002 * item.damage - 0.001,
-        });
+        const target = buddies[Math.floor(Math.random() * buddies.length)];
+        const dir = Vector.normalise(Vector.sub(target.position, { x: this.mousePos.x, y: this.mousePos.y }));
+        Body.applyForce(target, target.position, { x: dir.x * 0.03, y: dir.y * 0.03 - 0.005 });
         this.applyDamage(item.damage);
-        this.spawnParticles(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 10, '#ffdd00', 3);
+        this.spawnParticles(this.mousePos.x + (Math.random() - 0.5) * 8, this.mousePos.y + (Math.random() - 0.5) * 8, '#ffdd00', 4);
+        this.state.screenshake = Math.min(this.state.screenshake + 1, 6);
         break;
       }
       case 'flamethrower': {
         for (const b of buddies) {
           Body.applyForce(b, b.position, {
-            x: (Math.random() - 0.5) * 0.005,
-            y: -0.01 - Math.random() * 0.01,
+            x: (Math.random() - 0.5) * 0.008,
+            y: -0.018 - Math.random() * 0.012,
           });
         }
-        this.applyDamage(item.damage);
-        this.spawnParticles(x + (Math.random() - 0.5) * 30, y + (Math.random() - 0.5) * 10, '#ff4400', 8);
-        this.spawnParticles(x + (Math.random() - 0.5) * 20, y, '#ffaa00', 5);
-        this.state.mood = 'sad';
+        this.applyDamage(Math.max(1, Math.floor(item.damage / 3)));
+        this.spawnParticles(x + (Math.random() - 0.5) * 50, y + (Math.random() - 0.5) * 20, '#ff4400', 10);
+        this.spawnParticles(x + (Math.random() - 0.5) * 35, y + (Math.random() - 0.5) * 10, '#ffaa00', 6);
+        this.state.mood = 'scared';
+        this.state.moodTimer = 20;
         break;
       }
       case 'missile': {
-        this.spawnExplosion(x, y, 50);
+        this.spawnExplosion(x, y, 55);
+        this.state.screenshake = Math.min(this.state.screenshake + 12, 18);
         this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'bowling': {
         for (const b of buddies) {
           const d = Vector.magnitude(Vector.sub(b.position, { x, y }));
-          if (d < 100) {
+          if (d < 110) {
             const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-            Body.applyForce(b, b.position, {
-              x: dir.x * 0.05,
-              y: dir.y * 0.05 - 0.04,
-            });
+            Body.applyForce(b, b.position, { x: dir.x * 0.08, y: dir.y * 0.08 - 0.06 });
           }
         }
         this.applyDamage(item.damage);
-        this.state.screenshake = Math.min(this.state.screenshake + 5, 10);
+        this.state.screenshake = Math.min(this.state.screenshake + 8, 14);
+        this.spawnParticles(x, y, '#555555', 15);
+        this.spawnParticles(x, y, '#888888', 10);
         this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'fireball': {
-        const target = buddies[Math.floor(Math.random() * buddies.length)];
-        const dir = Vector.normalise(Vector.sub(target.position, { x, y }));
-        Body.applyForce(target, target.position, {
-          x: dir.x * 0.004 * item.damage,
-          y: dir.y * 0.004 * item.damage - 0.01,
-        });
+        for (const b of buddies) {
+          const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
+          Body.applyForce(b, b.position, {
+            x: dir.x * 0.006 * item.damage,
+            y: dir.y * 0.006 * item.damage - 0.02,
+          });
+        }
         this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#ff4400', 12);
-        this.spawnParticles(x, y, '#ffdd00', 8);
+        this.spawnParticles(x + (Math.random() - 0.5) * 70, y + (Math.random() - 0.5) * 30, '#ff4400', 20);
+        this.spawnParticles(x + (Math.random() - 0.5) * 50, y + (Math.random() - 0.5) * 20, '#ffdd00', 12);
+        this.state.screenshake = Math.min(this.state.screenshake + 4, 10);
         this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'mine': {
-        this.spawnExplosion(x + (Math.random() - 0.5) * 15, y + (Math.random() - 0.5) * 15, 32);
+        for (const b of buddies) {
+          const d = Vector.magnitude(Vector.sub(b.position, { x, y }));
+          if (d < 130) {
+            Body.applyForce(b, b.position, {
+              x: (Math.random() - 0.5) * 0.035,
+              y: -0.1 - (130 - d) * 0.0008,
+            });
+          }
+        }
+        this.applyDamage(item.damage);
+        this.spawnExplosion(x, y, 35);
+        this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'stun': {
         for (const b of buddies) {
           Body.setVelocity(b, { x: 0, y: 0 });
-          Body.applyForce(b, b.position, { x: (Math.random() - 0.5) * 0.005, y: -0.005 });
+          Body.setAngularVelocity(b, 0);
         }
-        this.applyDamage(10);
-        this.spawnParticles(x, y, '#00d4ff', 15);
-        this.spawnParticles(x, y, '#fff', 8);
+        this.applyDamage(item.damage);
+        this.spawnParticles(x, y, '#00d4ff', 25);
+        this.spawnParticles(x, y, '#ffffff', 12);
         this.state.mood = 'scared';
+        this.state.moodTimer = 90;
+        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'rubberballs': {
-        for (const b of buddies) {
-          Body.applyForce(b, b.position, {
-            x: (Math.random() - 0.5) * 0.015,
-            y: -0.015 - Math.random() * 0.01,
+        for (let i = 0; i < 5; i++) {
+          const bx = x + (Math.random() - 0.5) * 40;
+          const by = Math.min(y, ROOM_HEIGHT - 50) + (Math.random() - 0.5) * 20;
+          const ball = bd.circle(bx, by, 6 + Math.random() * 5, {
+            restitution: 0.9, friction: 0.2, frictionAir: 0.005, density: 0.001, label: 'prop',
           });
+          Body.applyForce(ball, ball.position, {
+            x: (Math.random() - 0.5) * 0.06,
+            y: -0.06 - Math.random() * 0.04,
+          });
+          World.add(this.engine.world, ball);
+          this.props.push(ball);
         }
-        this.applyDamage(3);
-        this.spawnParticles(x, y, '#ff6b6b', 4);
+        this.applyDamage(item.damage);
+        this.spawnParticles(x, y, '#ff6b6b', 8);
+        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'flail': {
         const target = buddies[Math.floor(Math.random() * buddies.length)];
         const dir = Vector.normalise(Vector.sub(target.position, { x, y }));
-        Body.applyForce(target, target.position, {
-          x: dir.x * 0.04,
-          y: dir.y * 0.04 - 0.03,
-        });
+        Body.applyForce(target, target.position, { x: dir.x * 0.06, y: dir.y * 0.06 - 0.045 });
+        Body.setAngularVelocity(target, target.angularVelocity + (Math.random() - 0.5) * 0.4);
         this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#8e44ad', 8);
-        this.state.screenshake = Math.min(this.state.screenshake + 3, 8);
+        this.spawnParticles(x, y, '#8e44ad', 14);
+        this.state.screenshake = Math.min(this.state.screenshake + 5, 10);
         this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'molotov': {
-        this.spawnExplosion(x, y, 32);
-        this.spawnParticles(x, y, '#ff4400', 20);
-        this.state.mood = 'angry';
+        this.spawnExplosion(x, y, 30);
+        for (let i = 0; i < 20; i++) {
+          this.state.particles.push({
+            x: x + (Math.random() - 0.5) * 60,
+            y: y + (Math.random() - 0.5) * 20,
+            vx: (Math.random() - 0.5) * 2.5,
+            vy: -Math.random() * 4 - 1,
+            life: 30 + Math.random() * 30,
+            maxLife: 60,
+            color: Math.random() < 0.5 ? '#ff4400' : '#ffaa00',
+            size: 3 + Math.random() * 4,
+          });
+        }
+        this.applyDamage(item.damage);
+        this.state.screenshake = Math.min(this.state.screenshake + 6, 10);
+        this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'gravity': {
+        const pullPoint = { x, y };
         for (const b of buddies) {
-          const dir = Vector.normalise(Vector.sub({ x, y }, b.position));
-          Body.applyForce(b, b.position, { x: dir.x * 0.035, y: dir.y * 0.035 });
+          const d = Vector.magnitude(Vector.sub(pullPoint, b.position));
+          if (d < 250) {
+            const dir = Vector.normalise(Vector.sub(pullPoint, b.position));
+            Body.applyForce(b, b.position, {
+              x: dir.x * 0.05 * (250 / Math.max(d, 20)),
+              y: dir.y * 0.05 * (250 / Math.max(d, 20)),
+            });
+          }
         }
-        this.spawnParticles(x, y, '#9b59b6', 10);
+        for (const b of this.props) {
+          const d = Vector.magnitude(Vector.sub(pullPoint, b.position));
+          if (d < 250) {
+            const dir = Vector.normalise(Vector.sub(pullPoint, b.position));
+            Body.applyForce(b, b.position, {
+              x: dir.x * 0.03 * (250 / Math.max(d, 20)),
+              y: dir.y * 0.03 * (250 / Math.max(d, 20)),
+            });
+          }
+        }
+        this.spawnParticles(x, y, '#9b59b6', 30);
+        this.state.screenshake = Math.min(this.state.screenshake + 2, 6);
         break;
       }
       case 'magicorb': {
         for (const b of buddies) {
           const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-          Body.applyForce(b, b.position, {
-            x: dir.x * 0.06,
-            y: dir.y * 0.06 - 0.05,
-          });
+          Body.applyForce(b, b.position, { x: dir.x * 0.09, y: dir.y * 0.09 - 0.07 });
+        }
+        for (const b of this.props) {
+          const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
+          Body.applyForce(b, b.position, { x: dir.x * 0.06, y: dir.y * 0.06 });
         }
         this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#9b59b6', 20);
-        this.spawnParticles(x, y, '#ffd700', 15);
-        this.state.screenshake = Math.min(this.state.screenshake + 6, 10);
+        this.spawnParticles(x, y, '#9b59b6', 35);
+        this.spawnParticles(x, y, '#ffd700', 20);
+        this.state.screenshake = Math.min(this.state.screenshake + 10, 14);
+        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'radio': {
         for (const b of buddies) {
           Body.applyForce(b, b.position, {
-            x: (Math.random() - 0.5) * 0.008,
-            y: -0.008 - Math.random() * 0.008,
+            x: (Math.random() - 0.5) * 0.012,
+            y: -0.012 - Math.random() * 0.01,
           });
         }
         this.state.mood = 'happy';
-        this.state.money += 5;
-        this.onMoneyEarned?.(5);
-        this.spawnParticles(x, y, '#ffd700', 10);
-        this.spawnParticles(x, y, '#e74c3c', 5);
-        this.spawnParticles(x, y, '#3498db', 5);
+        this.state.moodTimer = 180;
+        this.state.money += 10;
+        this.onMoneyEarned?.(10);
+        const discoColors = ['#ff6b6b', '#ffd700', '#2ecc71', '#3498db', '#9b59b6'];
+        for (let i = 0; i < 25; i++) {
+          this.state.particles.push({
+            x: x + (Math.random() - 0.5) * 100,
+            y: y + (Math.random() - 0.5) * 50,
+            vx: (Math.random() - 0.5) * 3.5,
+            vy: -Math.random() * 5 - 2,
+            life: 40 + Math.random() * 30,
+            maxLife: 70,
+            color: discoColors[Math.floor(Math.random() * discoColors.length)],
+            size: 2 + Math.random() * 3,
+          });
+        }
+        this.spawnMoneyPopup(x, y - 20, 10);
         break;
       }
       default: {
         for (const b of buddies) {
           const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-          Body.applyForce(b, b.position, { x: dir.x * 0.02, y: -0.02 });
+          Body.applyForce(b, b.position, { x: dir.x * 0.03, y: -0.03 });
         }
         this.applyDamage(10);
       }
@@ -753,6 +568,16 @@ export class GameEngine {
     }
   }
 
+  private enforceBounds(): void {
+    const torso = this.state.buddyBodies.find(b => b.label === 'buddy-torso');
+    if (!torso) return;
+    const m = 200;
+    if (torso.position.x < -m || torso.position.x > ROOM_WIDTH + m ||
+        torso.position.y < -m || torso.position.y > ROOM_HEIGHT + m) {
+      this.respawnBuddy();
+    }
+  }
+
   // ── Input handlers (public) ────────────────────
 
   onMouseDown(e: React.MouseEvent<HTMLCanvasElement>): void {
@@ -761,18 +586,33 @@ export class GameEngine {
     const y = e.clientY - rect.top;
     this.isMouseDown = true;
     this.mousePos = { x, y };
+
+    for (const b of this.state.buddyBodies) {
+      const d = Vector.magnitude(Vector.sub(b.position, { x, y }));
+      if (d < 65) { this.dragBody = b; break; }
+    }
+
     this.handleInteraction(x, y);
   }
 
   onMouseMove(e: React.MouseEvent<HTMLCanvasElement>): void {
     const rect = this.canvas.getBoundingClientRect();
     this.mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+    if (this.isMouseDown && this.dragBody) {
+      const dir = Vector.sub(this.mousePos, this.dragBody.position);
+      Body.setVelocity(this.dragBody, Vector.mult(dir, 0.3));
+    }
+
     if (this.isMouseDown && this.state.activeItem.id === 'machinegun') {
       this.handleInteraction(this.mousePos.x, this.mousePos.y);
     }
   }
 
-  onMouseUp(): void { this.isMouseDown = false; }
+  onMouseUp(): void {
+    this.isMouseDown = false;
+    this.dragBody = null;
+  }
 
   setActiveItem(itemId: string): void {
     const item = ITEMS.find(i => i.id === itemId);
@@ -794,32 +634,8 @@ export class GameEngine {
 
   setSkin(color: string): void { this.state.baseColor = color; }
 
-  private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.arcTo(x + w, y, x + w, y + r, r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-    ctx.lineTo(x + r, y + h);
-    ctx.arcTo(x, y + h, x, y + h - r, r);
-    ctx.lineTo(x, y + r);
-    ctx.arcTo(x, y, x + r, y, r);
-    ctx.closePath();
-  }
-
-  // ── Color helpers ───────────────────────────────
-
-  private lighten(c: string, p: number): string {
-    const n = parseInt(c.replace('#', ''), 16);
-    const a = Math.round(2.55 * p);
-    return `rgb(${Math.min(255, (n >> 16) + a)},${Math.min(255, ((n >> 8) & 0xff) + a)},${Math.min(255, (n & 0xff) + a)})`;
-  }
-
-  private darken(c: string, p: number): string {
-    const n = parseInt(c.replace('#', ''), 16);
-    const a = Math.round(2.55 * p);
-    return `rgb(${Math.max(0, (n >> 16) - a)},${Math.max(0, ((n >> 8) & 0xff) - a)},${Math.max(0, (n & 0xff) - a)})`;
+  setGravity(scale: number): void {
+    this.engine.gravity.y = scale;
   }
 
   // ── Loop ────────────────────────────────────────
@@ -831,6 +647,20 @@ export class GameEngine {
       this.lastTimestamp = ts;
 
       Engine.update(this.engine, d);
+      updateAI(this.state.buddyBodies, this.ai);
+      this.enforceBounds();
+      if (this.isMouseDown) {
+        this.shootTimer--;
+        if (this.shootTimer <= 0) {
+          if (this.state.activeItem.id === 'machinegun') {
+            this.shootTimer = 5;
+            this.handleInteraction(this.mousePos.x, this.mousePos.y, true);
+          } else if (this.state.activeItem.id === 'flamethrower') {
+            this.shootTimer = 3;
+            this.handleInteraction(this.mousePos.x, this.mousePos.y, true);
+          }
+        }
+      }
       this.updateParticles();
       this.updateMoneyPopups();
       this.updateMoodTimer();
@@ -839,12 +669,13 @@ export class GameEngine {
       if (this.state.screenshake < 0.5) this.state.screenshake = 0;
 
       this.ctx.save();
-      this.drawRoom();
-      this.drawBuddy();
-      this.drawParticles();
-      this.drawMoneyPopups();
-      this.drawMoodIndicator();
-      this.drawHUD();
+      drawRoom(this.ctx, this.state.screenshake);
+      drawProps(this.ctx, this.props);
+      drawBuddy(this.ctx, this.state.buddyBodies, this.state.baseColor, this.state.mood);
+      drawParticles(this.ctx, this.state.particles);
+      drawMoneyPopups(this.ctx, this.state.moneyPopups);
+      drawMoodIndicator(this.ctx, this.state.mood);
+      drawHUD(this.ctx, this.state.money, this.state.health, this.state.activeItem.name);
       this.ctx.restore();
 
       this.animFrameId = requestAnimationFrame(loop);
@@ -859,8 +690,3 @@ export class GameEngine {
 
   getRoomDimensions() { return { width: ROOM_WIDTH, height: ROOM_HEIGHT }; }
 }
-
-const bd = Bodies as unknown as {
-  rectangle: (x: number, y: number, w: number, h: number, opts?: Record<string, unknown>) => Matter.Body;
-  circle: (x: number, y: number, r: number, opts?: Record<string, unknown>) => Matter.Body;
-};

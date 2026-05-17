@@ -41,6 +41,9 @@ export function useGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
     setSkin: (color: string) => {
       engineRef.current?.setSkin(color);
     },
+    setGravity: (scale: number) => {
+      engineRef.current?.setGravity(scale);
+    },
     unlockItemInEngine: (itemId: string): boolean => {
       return engineRef.current?.unlockItem(itemId) ?? false;
     },
