@@ -1,6 +1,7 @@
 export type Mood = 'happy' | 'neutral' | 'sad' | 'angry' | 'scared';
 
-export type ItemCategory = 'weapon' | 'explosive' | 'utility' | 'toy' | 'hand';
+export type ItemCategory = 'mayhem' | 'explosive' | 'utility' | 'toy' | 'care' | 'hand';
+export type ItemTone = 'violent' | 'playful' | 'care';
 
 export interface ToolItem {
   id: string;
@@ -10,6 +11,7 @@ export interface ToolItem {
   category: ItemCategory;
   damage: number;
   moneyMultiplier: number;
+  tone: ItemTone;
 }
 
 export interface Skin {
@@ -27,11 +29,16 @@ export interface GameState {
   activeSkinId: string | null;
   mood: Mood;
   score: number;
+  trust: number;
+  stress: number;
+  reaction: string;
 }
 
 export interface BuddyState {
   health: number;
   mood: Mood;
+  trust: number;
+  stress: number;
   position: { x: number; y: number };
   velocity: { x: number; y: number };
 }

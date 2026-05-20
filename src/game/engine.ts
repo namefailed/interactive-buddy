@@ -12,12 +12,18 @@ const bd = Bodies as unknown as {
   circle: (x: number, y: number, r: number, opts?: Record<string, unknown>) => Matter.Body;
 };
 
+const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value));
+
 export interface GameEngineState {
   buddyBodies: Matter.Body[];
   buddyConstraints: Matter.Constraint[];
   mood: Mood;
   money: number;
+  score: number;
   health: number;
+  trust: number;
+  stress: number;
+  reaction: string;
   particles: Particle[];
   activeItem: ToolItem;
   unlockedItems: string[];
@@ -70,7 +76,11 @@ export class GameEngine {
       buddyConstraints: [],
       mood: 'neutral',
       money: 0,
+      score: 0,
       health: 100,
+      trust: 60,
+      stress: 18,
+      reaction: 'Ready for the first experiment.',
       particles: [],
       activeItem: ITEMS[0],
       unlockedItems: [...DEFAULT_ITEMS],
@@ -143,7 +153,7 @@ export class GameEngine {
     return [ball, box];
   }
 
-  // ── Particles ───────────────────────────────────
+    // Particles
 
   private spawnParticles(x: number, y: number, color: string, count: number): void {
     for (let i = 0; i < count; i++) {
@@ -193,26 +203,75 @@ export class GameEngine {
     }, 200);
   }
 
-  // ── Game logic ──────────────────────────────────
+    // Game logic
+
+  private emitState(): void {
+    this.onStateChange?.({
+      activeItemId: this.state.activeItem.id,
+      mood: this.state.mood,
+      money: this.state.money,
+      score: this.state.score,
+      trust: this.state.trust,
+      stress: this.state.stress,
+      reaction: this.state.reaction,
+    });
+  }
+
+  private reward(amount: number, scoreMultiplier = 10): void {
+    if (amount <= 0) return;
+    this.state.money += amount;
+    this.state.score += amount * scoreMultiplier;
+    this.onMoneyEarned?.(amount);
+  }
+
+  private adjustBond(trustDelta: number, stressDelta: number): void {
+    this.state.trust = clamp(this.state.trust + trustDelta);
+    this.state.stress = clamp(this.state.stress + stressDelta);
+  }
+
+  private setReaction(reaction: string): void {
+    this.state.reaction = reaction;
+  }
 
   applyDamage(amount: number): void {
     if (amount <= 0) return;
     this.state.health = Math.max(0, this.state.health - amount);
     const cash = Math.max(1, Math.floor(amount * this.state.activeItem.moneyMultiplier));
-    this.state.money += cash;
-    this.onMoneyEarned?.(cash);
+    this.reward(cash);
+    this.adjustBond(-amount * 0.3, amount * 0.45);
     this.state.screenshake = Math.min(this.state.screenshake + amount * 0.1, 8);
-    this.updateMood(-amount);
+    this.updateMood(amount);
 
     if (this.state.health <= 0) this.respawnBuddy();
   }
 
-  private updateMood(damage: number): void {
-    if (damage > 15) this.state.mood = 'angry';
-    else if (damage > 5) this.state.mood = 'sad';
-    else if (damage < 0) this.state.mood = 'happy';
-    else if (Math.random() < 0.1) this.state.mood = 'scared';
-    this.state.moodTimer = 30 + Math.floor(Math.random() * 30);
+  private applyCare(x: number, y: number, trustGain: number, stressDrop: number, reward: number, reaction: string): void {
+    this.state.health = Math.min(100, this.state.health + Math.max(1, Math.floor(trustGain * 0.35)));
+    this.adjustBond(trustGain, -stressDrop);
+    this.reward(reward, 7);
+    this.state.mood = 'happy';
+    this.state.moodTimer = 90;
+    this.setReaction(reaction);
+    this.spawnParticles(x, y, '#5eead4', 8);
+    this.spawnParticles(x, y, '#facc15', 5);
+    if (reward > 0) this.spawnMoneyPopup(x, y - 20, reward);
+    this.emitState();
+  }
+
+  private updateMood(intensity: number): void {
+    if (this.state.stress > 78) this.state.mood = 'scared';
+    else if (intensity > 22) this.state.mood = 'angry';
+    else if (intensity > 6) this.state.mood = 'sad';
+    else if (this.state.trust > 72 && this.state.stress < 32) this.state.mood = 'happy';
+    else if (Math.random() < 0.12) this.state.mood = 'scared';
+    else this.state.mood = 'neutral';
+
+    this.setReaction(
+      this.state.stress > 78
+        ? 'Buddy is overwhelmed. Care tools will help.'
+        : this.state.activeItem.name + ' landed. Stress is ' + Math.round(this.state.stress) + '%.'
+    );
+    this.state.moodTimer = 30 + Math.floor(Math.random() * 36);
     this.emitState();
   }
 
@@ -228,14 +287,16 @@ export class GameEngine {
 
     this.state.health = 100;
     this.state.mood = 'happy';
+    this.state.stress = Math.max(20, this.state.stress - 25);
+    this.state.trust = Math.max(35, this.state.trust - 10);
     this.state.screenshake = 10;
+    this.setReaction('Buddy bounced back, but remembers that one.');
     this.spawnParticles(ROOM_WIDTH / 2, ROOM_HEIGHT / 2, '#ffd700', 40);
-    this.state.money += 50;
-    this.onMoneyEarned?.(50);
+    this.reward(50);
     this.emitState();
   }
 
-  // ── Interactions ────────────────────────────────
+    // Interactions
 
   private handleInteraction(x: number, y: number, isAutoFire = false): void {
     const item = this.state.activeItem;
@@ -274,13 +335,21 @@ export class GameEngine {
             y: -0.003 - Math.random() * 0.002,
           });
         }
-        this.state.mood = 'happy';
-        this.state.moodTimer = 60;
-        this.state.money += 2;
-        this.onMoneyEarned?.(2);
-        this.spawnParticles(x - 10, y + 15, '#ff6b9d', 3);
-        this.spawnParticles(x + 10, y + 15, '#ffd700', 3);
-        this.spawnMoneyPopup(x, y - 20, 2);
+        this.applyCare(x, y, 6, 10, 2, 'Buddy loosens up. The lab feels friendlier.');
+        break;
+      }
+      case 'comfort': {
+        for (const b of buddies) {
+          Body.applyForce(b, b.position, { x: (Math.random() - 0.5) * 0.0015, y: -0.0015 });
+        }
+        this.applyCare(x, y, 10, 14, 1, 'Buddy leans into the attention.');
+        break;
+      }
+      case 'treat': {
+        for (const b of buddies) {
+          Body.applyForce(b, b.position, { x: (Math.random() - 0.5) * 0.002, y: -0.004 });
+        }
+        this.applyCare(x, y, 15, 18, 4, 'Snack accepted. Trust climbs.');
         break;
       }
       case 'grenade': {
@@ -507,10 +576,7 @@ export class GameEngine {
             y: -0.012 - Math.random() * 0.01,
           });
         }
-        this.state.mood = 'happy';
-        this.state.moodTimer = 180;
-        this.state.money += 10;
-        this.onMoneyEarned?.(10);
+        this.applyCare(x, y, 12, 20, 10, 'Buddy found the beat. Stress drops.');
         const discoColors = ['#ff6b6b', '#ffd700', '#2ecc71', '#3498db', '#9b59b6'];
         for (let i = 0; i < 25; i++) {
           this.state.particles.push({
@@ -524,7 +590,6 @@ export class GameEngine {
             size: 2 + Math.random() * 3,
           });
         }
-        this.spawnMoneyPopup(x, y - 20, 10);
         break;
       }
       default: {
@@ -537,7 +602,7 @@ export class GameEngine {
     }
   }
 
-  // ── Update ──────────────────────────────────────
+    // Update
 
   private updateParticles(): void {
     for (let i = this.state.particles.length - 1; i >= 0; i--) {
@@ -562,7 +627,7 @@ export class GameEngine {
     if (this.state.moodTimer > 0) {
       this.state.moodTimer--;
       if (this.state.moodTimer === 0) {
-        this.state.mood = 'neutral';
+        this.state.mood = this.state.stress > 70 ? 'scared' : this.state.trust > 70 ? 'happy' : 'neutral';
         this.emitState();
       }
     }
@@ -578,7 +643,7 @@ export class GameEngine {
     }
   }
 
-  // ── Input handlers (public) ────────────────────
+    // Input handlers (public)
 
   onMouseDown(e: React.MouseEvent<HTMLCanvasElement>): void {
     const rect = this.canvas.getBoundingClientRect();
@@ -618,6 +683,7 @@ export class GameEngine {
     const item = ITEMS.find(i => i.id === itemId);
     if (item && this.state.unlockedItems.includes(itemId)) {
       this.state.activeItem = item;
+      this.setReaction(item.name + ' selected.');
       this.emitState();
     }
   }
@@ -632,13 +698,26 @@ export class GameEngine {
     return true;
   }
 
-  setSkin(color: string): void { this.state.baseColor = color; }
+  setSkin(color: string): void {
+    this.state.baseColor = color;
+  }
+
+  syncUnlockedItems(itemIds: string[]): void {
+    this.state.unlockedItems = [...new Set(itemIds)];
+    if (!this.state.unlockedItems.includes(this.state.activeItem.id)) {
+      this.state.activeItem = ITEMS[0];
+    }
+  }
+
+  syncMoney(money: number): void {
+    this.state.money = money;
+  }
 
   setGravity(scale: number): void {
     this.engine.gravity.y = scale;
   }
 
-  // ── Loop ────────────────────────────────────────
+    // Loop
 
   start(): void {
     this.lastTimestamp = performance.now();
@@ -690,3 +769,4 @@ export class GameEngine {
 
   getRoomDimensions() { return { width: ROOM_WIDTH, height: ROOM_HEIGHT }; }
 }
+

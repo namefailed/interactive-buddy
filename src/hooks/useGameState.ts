@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 import type { GameState, Mood } from '../types';
 import { DEFAULT_ITEMS } from '../game/items';
 
+const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value));
+
 const initialState: GameState = {
   money: 0,
   unlockedItems: [...DEFAULT_ITEMS],
@@ -10,6 +12,9 @@ const initialState: GameState = {
   activeSkinId: 'default',
   mood: 'neutral',
   score: 0,
+  trust: 60,
+  stress: 18,
+  reaction: 'Ready for the first experiment.',
 };
 
 export function useGameState() {
@@ -24,7 +29,9 @@ export function useGameState() {
   }, []);
 
   const setActiveItem = useCallback((itemId: string) => {
-    setState(prev => ({ ...prev, activeItemId: itemId }));
+    setState(prev => (
+      prev.unlockedItems.includes(itemId) ? { ...prev, activeItemId: itemId } : prev
+    ));
   }, []);
 
   const setActiveSkin = useCallback((skinId: string) => {
@@ -51,7 +58,12 @@ export function useGameState() {
   }, []);
 
   const updateFromEngine = useCallback((partial: Partial<GameState>) => {
-    setState(prev => ({ ...prev, ...partial }));
+    setState(prev => ({
+      ...prev,
+      ...partial,
+      trust: partial.trust === undefined ? prev.trust : clamp(partial.trust),
+      stress: partial.stress === undefined ? prev.stress : clamp(partial.stress),
+    }));
   }, []);
 
   return {

@@ -1,73 +1,63 @@
-# React + TypeScript + Vite
+# Interactive Buddy
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Interactive Buddy is a polished arcade physics pet built for a portfolio site. It keeps the classic cartoon mayhem loop: click, drag, unlock tools, trigger ragdoll physics, and earn currency. The redesign adds a light companion layer so the buddy also reacts to care, stress, trust, skins, and recovery moments.
 
-Currently, two official plugins are available:
+## Gameplay Loop
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Use the tool dock to choose a mayhem, toy, utility, or care action.
+2. Interact with the buddy on the canvas to produce physics reactions, particles, score, and money.
+3. Watch the buddy signal mood, trust, stress, and short reactions in the status strip.
+4. Spend money on new tools and skins.
+5. Balance chaos with care tools like Comfort, Tickle, Treat, and Radio to keep the buddy responsive.
 
-## React Compiler
+## Controls
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Mouse down on the stage: use the selected tool.
+- Drag near the buddy: grab and toss a body part.
+- Hold with Machine Gun or Flamethrower: continuous effects.
+- G: toggle low gravity.
 
-## Expanding the ESLint configuration
+## Project Scripts
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+    pnpm install
+    pnpm dev
+    pnpm build
+    pnpm lint
+    pnpm preview
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Portfolio Positioning
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+The game is meant to read as a shippable interactive toy rather than a raw prototype. The current pass focuses on:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- a studio-like game shell with status, stage, and tool dock;
+- synced React UI and Matter.js engine state;
+- a simple emotional model with mood, trust, stress, and reactions;
+- readable tool categories and locked, owned, and active states;
+- practical docs for future contributors.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Adding Content
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Add a Tool
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+1. Add a ToolItem entry in src/game/items/index.ts with an id, category, tone, cost, damage, and money multiplier.
+2. Add behavior for the id in GameEngine.handleInteraction in src/game/engine.ts.
+3. Add a short token in src/components/Toolbar.tsx if the generated three-letter token is not clear.
+4. Run pnpm build and pnpm lint.
+
+### Add a Skin
+
+1. Add a Skin entry in src/game/items/index.ts.
+2. The toolbar will render it automatically.
+3. The selected skin color is synced to GameEngine.setSkin through GameCanvas and useGame.
+
+### Add a Reaction
+
+Use GameEngine.setReaction from interaction code when the player does something meaningful. Reactions should be short, present-tense status lines that fit the bottom strip.
+
+## Tech Stack
+
+- React 19
+- TypeScript
+- Vite
+- Matter.js
+- Canvas 2D rendering

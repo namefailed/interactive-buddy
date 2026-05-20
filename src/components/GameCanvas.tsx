@@ -3,11 +3,22 @@ import { useGame } from '../hooks/useGame';
 import type { GameState } from '../types';
 
 interface GameCanvasProps {
+  activeItemId: string;
+  activeSkinColor: string;
+  unlockedItems: string[];
+  money: number;
   onStateChange: (state: Partial<GameState>) => void;
   onMoneyEarned: (amount: number) => void;
 }
 
-export function GameCanvas({ onStateChange, onMoneyEarned }: GameCanvasProps) {
+export function GameCanvas({
+  activeItemId,
+  activeSkinColor,
+  unlockedItems,
+  money,
+  onStateChange,
+  onMoneyEarned,
+}: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [lowGravity, setLowGravity] = useState(false);
   const {
@@ -16,7 +27,11 @@ export function GameCanvas({ onStateChange, onMoneyEarned }: GameCanvasProps) {
     handleMouseUp,
     setOnStateChange,
     setOnMoneyEarned,
+    setActiveItem,
+    setSkin,
     setGravity,
+    syncUnlockedItems,
+    syncMoney,
   } = useGame(canvasRef);
 
   useEffect(() => {
@@ -28,10 +43,26 @@ export function GameCanvas({ onStateChange, onMoneyEarned }: GameCanvasProps) {
   }, [onMoneyEarned, setOnMoneyEarned]);
 
   useEffect(() => {
+    syncUnlockedItems(unlockedItems);
+  }, [unlockedItems, syncUnlockedItems]);
+
+  useEffect(() => {
+    syncMoney(money);
+  }, [money, syncMoney]);
+
+  useEffect(() => {
+    setActiveItem(activeItemId);
+  }, [activeItemId, setActiveItem]);
+
+  useEffect(() => {
+    setSkin(activeSkinColor);
+  }, [activeSkinColor, setSkin]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'g' || e.key === 'G') {
-        setLowGravity(p => {
-          const next = !p;
+        setLowGravity(previous => {
+          const next = !previous;
           setGravity(next ? 0.4 : 1.5);
           return next;
         });
@@ -42,34 +73,20 @@ export function GameCanvas({ onStateChange, onMoneyEarned }: GameCanvasProps) {
   }, [setGravity]);
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="stage-frame">
       <canvas
         ref={canvasRef}
         width={800}
         height={500}
         tabIndex={0}
-        style={{
-          borderRadius: 12,
-          cursor: 'crosshair',
-          display: 'block',
-          outline: 'none',
-          boxShadow: '0 0 30px rgba(0,0,0,0.5), inset 0 0 60px rgba(0,0,0,0.3)',
-        }}
+        className="game-canvas"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       />
-      {lowGravity && (
-        <div style={{
-          position: 'absolute', top: 8, left: 8,
-          background: 'rgba(52,152,219,0.8)', color: '#fff',
-          padding: '4px 10px', borderRadius: 6, fontSize: 11,
-          fontWeight: 700, letterSpacing: 0.5, pointerEvents: 'none',
-        }}>
-          LOW GRAVITY
-        </div>
-      )}
+      <div className="stage-badge">G toggles gravity</div>
+      {lowGravity && <div className="gravity-badge">Low gravity</div>}
     </div>
   );
 }

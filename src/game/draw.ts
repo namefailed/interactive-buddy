@@ -30,23 +30,38 @@ export function darken(c: string, p: number): string {
 
 export function drawRoom(ctx: CanvasRenderingContext2D, screenshake: number): void {
   if (screenshake > 0) {
-    ctx.translate((Math.random() - 0.5) * screenshake * 2, (Math.random() - 0.5) * screenshake * 2);
+    ctx.translate((Math.random() - 0.5) * screenshake * 1.6, (Math.random() - 0.5) * screenshake * 1.6);
   }
 
   const grad = ctx.createLinearGradient(0, 0, 0, ROOM_HEIGHT);
-  grad.addColorStop(0, '#1a1a2e');
-  grad.addColorStop(1, '#0f0f1a');
+  grad.addColorStop(0, '#171a20');
+  grad.addColorStop(0.55, '#111821');
+  grad.addColorStop(1, '#171512');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 
-  for (let x = 0; x < ROOM_WIDTH; x += 40) {
-    for (let y = 0; y < ROOM_HEIGHT; y += 40) {
-      ctx.fillStyle = (x / 40 + y / 40) % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)';
-      ctx.fillRect(x, y, 40, 40);
-    }
+  const backGlow = ctx.createRadialGradient(ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 20, ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 360);
+  backGlow.addColorStop(0, 'rgba(45,212,191,0.14)');
+  backGlow.addColorStop(0.58, 'rgba(244,114,182,0.05)');
+  backGlow.addColorStop(1, 'transparent');
+  ctx.fillStyle = backGlow;
+  ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.035)';
+  for (let x = 0; x < ROOM_WIDTH; x += 50) {
+    ctx.fillRect(x, 0, 1, ROOM_HEIGHT);
+  }
+  for (let y = 0; y < ROOM_HEIGHT; y += 50) {
+    ctx.fillRect(0, y, ROOM_WIDTH, 1);
   }
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  const floor = ctx.createLinearGradient(0, ROOM_HEIGHT - 115, 0, ROOM_HEIGHT);
+  floor.addColorStop(0, 'rgba(255,255,255,0.02)');
+  floor.addColorStop(1, 'rgba(250,204,21,0.10)');
+  ctx.fillStyle = floor;
+  ctx.fillRect(0, ROOM_HEIGHT - 115, ROOM_WIDTH, 115);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.13)';
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, ROOM_WIDTH - 2, ROOM_HEIGHT - 2);
 }
@@ -313,14 +328,14 @@ export function drawMoodIndicator(ctx: CanvasRenderingContext2D, mood: Mood): vo
   ctx.font = 'bold 14px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const emojis: Record<Mood, string> = {
-    happy: '😊',
-    neutral: '😐',
-    sad: '😢',
-    angry: '😠',
-    scared: '😨',
+  const labels: Record<Mood, string> = {
+    happy: 'OK',
+    neutral: '--',
+    sad: '..',
+    angry: '!!',
+    scared: '??',
   };
-  ctx.fillText(emojis[mood], x, y + 1);
+  ctx.fillText(labels[mood], x, y + 1);
 }
 
 export function drawHUD(ctx: CanvasRenderingContext2D, money: number, health: number, activeItemName: string): void {
@@ -339,7 +354,7 @@ export function drawHUD(ctx: CanvasRenderingContext2D, money: number, health: nu
   ctx.fillStyle = health > 30 ? '#2ecc71' : '#e74c3c';
   ctx.font = '12px sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`❤ ${Math.max(0, Math.floor(health))}`, ROOM_WIDTH - 162, pad + 17);
+  ctx.fillText(`â¤ ${Math.max(0, Math.floor(health))}`, ROOM_WIDTH - 162, pad + 17);
 
   const hpPct = health / 100;
   ctx.fillStyle = 'rgba(255,255,255,0.15)';
@@ -353,5 +368,6 @@ export function drawHUD(ctx: CanvasRenderingContext2D, money: number, health: nu
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(`🔧 ${activeItemName}`, ROOM_WIDTH / 2, ROOM_HEIGHT - 8);
+  ctx.fillText(`ðŸ”§ ${activeItemName}`, ROOM_WIDTH / 2, ROOM_HEIGHT - 8);
 }
+

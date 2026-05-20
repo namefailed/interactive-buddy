@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { GameEngine } from '../game/engine';
 import type { GameState } from '../types';
 
@@ -19,33 +19,56 @@ export function useGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
     };
   }, [canvasRef]);
 
+  const setOnStateChange = useCallback((handler: (state: Partial<GameState>) => void) => {
+    if (engineRef.current) engineRef.current.onStateChange = handler;
+  }, []);
+
+  const setOnMoneyEarned = useCallback((handler: (amount: number) => void) => {
+    if (engineRef.current) engineRef.current.onMoneyEarned = handler;
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    engineRef.current?.onMouseDown(e);
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    engineRef.current?.onMouseMove(e);
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    engineRef.current?.onMouseUp();
+  }, []);
+
+  const setActiveItem = useCallback((itemId: string) => {
+    engineRef.current?.setActiveItem(itemId);
+  }, []);
+
+  const setSkin = useCallback((color: string) => {
+    engineRef.current?.setSkin(color);
+  }, []);
+
+  const setGravity = useCallback((scale: number) => {
+    engineRef.current?.setGravity(scale);
+  }, []);
+
+  const syncUnlockedItems = useCallback((itemIds: string[]) => {
+    engineRef.current?.syncUnlockedItems(itemIds);
+  }, []);
+
+  const syncMoney = useCallback((money: number) => {
+    engineRef.current?.syncMoney(money);
+  }, []);
+
   return {
-    setOnStateChange: (handler: (state: Partial<GameState>) => void) => {
-      if (engineRef.current) engineRef.current.onStateChange = handler;
-    },
-    setOnMoneyEarned: (handler: (amount: number) => void) => {
-      if (engineRef.current) engineRef.current.onMoneyEarned = handler;
-    },
-    handleMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => {
-      engineRef.current?.onMouseDown(e);
-    },
-    handleMouseMove: (e: React.MouseEvent<HTMLCanvasElement>) => {
-      engineRef.current?.onMouseMove(e);
-    },
-    handleMouseUp: () => {
-      engineRef.current?.onMouseUp();
-    },
-    setActiveItem: (itemId: string) => {
-      engineRef.current?.setActiveItem(itemId);
-    },
-    setSkin: (color: string) => {
-      engineRef.current?.setSkin(color);
-    },
-    setGravity: (scale: number) => {
-      engineRef.current?.setGravity(scale);
-    },
-    unlockItemInEngine: (itemId: string): boolean => {
-      return engineRef.current?.unlockItem(itemId) ?? false;
-    },
+    setOnStateChange,
+    setOnMoneyEarned,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    setActiveItem,
+    setSkin,
+    setGravity,
+    syncUnlockedItems,
+    syncMoney,
   };
 }
