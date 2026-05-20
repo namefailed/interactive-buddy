@@ -2,7 +2,7 @@ import Matter from 'matter-js';
 import type { Mood, Particle, GameState, ToolItem } from '../types';
 import { ITEMS, DEFAULT_ITEMS } from './items';
 import { ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS, BUDDY_RADIUS } from './constants';
-import { drawRoom, drawBuddy, drawProps, drawParticles, drawMoneyPopups, drawMoodIndicator, drawHUD } from './draw';
+import { drawRoom, drawBuddy, drawProps, drawParticles, drawMoneyPopups, drawActiveItemLabel } from './draw';
 import { createAIState, updateAI, type AIState } from './ai';
 
 const { Engine, World, Bodies, Body, Vector, Constraint } = Matter;
@@ -147,7 +147,7 @@ export class GameEngine {
   private createBuddy(): { bodies: Matter.Body[]; constraints: Matter.Constraint[] } {
     const cx = ROOM_WIDTH / 2;
     const cy = ROOM_HEIGHT - 100;
-    const r = BUDDY_RADIUS; // typically ~20
+    const r = BUDDY_RADIUS; // typically ~18
     const constraints: Matter.Constraint[] = [];
     const parts: Matter.Body[] = [];
     const group = Body.nextGroup(true);
@@ -160,28 +160,46 @@ export class GameEngine {
       collisionFilter: { group },
     };
 
-    const head = bd.circle(cx, cy - 45, r * 1.15, { ...opts, label: 'buddy-head', density: 0.0005 });
-    const torso = bd.rectangle(cx, cy - 10, r * 1.7, r * 1.5, { ...opts, label: 'buddy-torso', density: 0.006 });
-    const leftArm = bd.circle(cx - r - 12, cy - 15, r * 0.55, { ...opts, label: 'buddy-arm' });
-    const rightArm = bd.circle(cx + r + 12, cy - 15, r * 0.55, { ...opts, label: 'buddy-arm' });
-    const leftLeg = bd.circle(cx - 10, cy + 20, r * 0.65, { ...opts, label: 'buddy-leg' });
-    const rightLeg = bd.circle(cx + 10, cy + 20, r * 0.65, { ...opts, label: 'buddy-leg' });
+    // Bigger head
+    const head = bd.circle(cx, cy - 40, r * 1.5, { ...opts, label: 'buddy-head', density: 0.0005 });
+    
+    // Squishy bean torso
+    const torso = bd.rectangle(cx, cy - 5, r * 2.2, r * 1.8, { 
+      ...opts, label: 'buddy-torso', density: 0.006,
+      chamfer: { radius: 15 } 
+    });
+
+    // Floppy ears
+    const leftEar = bd.circle(cx - 15, cy - 65, r * 0.4, { ...opts, label: 'buddy-ear', density: 0.0001 });
+    const rightEar = bd.circle(cx + 15, cy - 65, r * 0.4, { ...opts, label: 'buddy-ear', density: 0.0001 });
+
+    // Stubby paws
+    const leftArm = bd.circle(cx - r - 15, cy - 5, r * 0.5, { ...opts, label: 'buddy-arm' });
+    const rightArm = bd.circle(cx + r + 15, cy - 5, r * 0.5, { ...opts, label: 'buddy-arm' });
+    const leftLeg = bd.circle(cx - 12, cy + 25, r * 0.6, { ...opts, label: 'buddy-leg' });
+    const rightLeg = bd.circle(cx + 12, cy + 25, r * 0.6, { ...opts, label: 'buddy-leg' });
 
     // Lock torso upright
     Body.setInertia(torso, Infinity);
 
-    parts.push(head, torso, leftArm, rightArm, leftLeg, rightLeg);
+    parts.push(head, torso, leftEar, rightEar, leftArm, rightArm, leftLeg, rightLeg);
 
     constraints.push(
-      // Two constraints for the neck to lock rotation
-      Constraint.create({ bodyA: head, pointA: { x: -10, y: 15 }, bodyB: torso, pointB: { x: -10, y: -15 }, stiffness: 0.9, damping: 0.1 }),
-      Constraint.create({ bodyA: head, pointA: { x: 10, y: 15 }, bodyB: torso, pointB: { x: 10, y: -15 }, stiffness: 0.9, damping: 0.1 }),
+      // Neck
+      Constraint.create({ bodyA: head, pointA: { x: -12, y: 18 }, bodyB: torso, pointB: { x: -12, y: -15 }, stiffness: 0.9, damping: 0.1 }),
+      Constraint.create({ bodyA: head, pointA: { x: 12, y: 18 }, bodyB: torso, pointB: { x: 12, y: -15 }, stiffness: 0.9, damping: 0.1 }),
+      
+      // Ears (pinned to top sides of head)
+      Constraint.create({ bodyA: leftEar, bodyB: head, pointB: { x: -18, y: -18 }, stiffness: 0.2, damping: 0.05 }),
+      Constraint.create({ bodyA: rightEar, bodyB: head, pointB: { x: 18, y: -18 }, stiffness: 0.2, damping: 0.05 }),
+
       // Shoulders
-      Constraint.create({ bodyA: leftArm, bodyB: torso, pointB: { x: -15, y: -5 }, stiffness: 0.8, damping: 0.1 }),
-      Constraint.create({ bodyA: rightArm, bodyB: torso, pointB: { x: 15, y: -5 }, stiffness: 0.8, damping: 0.1 }),
+      Constraint.create({ bodyA: leftArm, bodyB: torso, pointB: { x: -20, y: -2 }, stiffness: 0.8, damping: 0.1 }),
+      Constraint.create({ bodyA: rightArm, bodyB: torso, pointB: { x: 20, y: -2 }, stiffness: 0.8, damping: 0.1 }),
+      
       // Hips
-      Constraint.create({ bodyA: leftLeg, bodyB: torso, pointB: { x: -10, y: 15 }, stiffness: 0.9, damping: 0.1 }),
-      Constraint.create({ bodyA: rightLeg, bodyB: torso, pointB: { x: 10, y: 15 }, stiffness: 0.9, damping: 0.1 }),
+      Constraint.create({ bodyA: leftLeg, bodyB: torso, pointB: { x: -12, y: 16 }, stiffness: 0.9, damping: 0.1 }),
+      Constraint.create({ bodyA: rightLeg, bodyB: torso, pointB: { x: 12, y: 16 }, stiffness: 0.9, damping: 0.1 }),
     );
 
     return { bodies: parts, constraints };
@@ -550,8 +568,10 @@ export class GameEngine {
 
   onMouseDown(e: React.MouseEvent<HTMLCanvasElement>): void {
     const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
     this.isMouseDown = true;
     this.mousePos = { x, y };
 
@@ -565,7 +585,12 @@ export class GameEngine {
 
   onMouseMove(e: React.MouseEvent<HTMLCanvasElement>): void {
     const rect = this.canvas.getBoundingClientRect();
-    this.mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    this.mousePos = {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
 
     if (this.isMouseDown && this.dragBody) {
       const dir = Vector.sub(this.mousePos, this.dragBody.position);
@@ -656,8 +681,7 @@ export class GameEngine {
       drawBuddy(this.ctx, this.state.buddyBodies, this.state.baseColor, this.state.mood, this.ai.state);
       drawParticles(this.ctx, this.state.particles);
       drawMoneyPopups(this.ctx, this.state.moneyPopups);
-      drawMoodIndicator(this.ctx, this.state.mood);
-      drawHUD(this.ctx, this.state.money, this.state.health, this.state.activeItem.name);
+      drawActiveItemLabel(this.ctx, this.state.activeItem.name);
       this.ctx.restore();
 
       this.animFrameId = requestAnimationFrame(loop);

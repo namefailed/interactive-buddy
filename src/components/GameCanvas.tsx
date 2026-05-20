@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import type { GameState } from '../types';
+import { ROOM_WIDTH, ROOM_HEIGHT } from '../game/constants';
 
 interface GameCanvasProps {
   activeItemId: string;
@@ -34,29 +35,12 @@ export function GameCanvas({
     syncMoney,
   } = useGame(canvasRef);
 
-  useEffect(() => {
-    setOnStateChange(onStateChange);
-  }, [onStateChange, setOnStateChange]);
-
-  useEffect(() => {
-    setOnMoneyEarned(onMoneyEarned);
-  }, [onMoneyEarned, setOnMoneyEarned]);
-
-  useEffect(() => {
-    syncUnlockedItems(unlockedItems);
-  }, [unlockedItems, syncUnlockedItems]);
-
-  useEffect(() => {
-    syncMoney(money);
-  }, [money, syncMoney]);
-
-  useEffect(() => {
-    setActiveItem(activeItemId);
-  }, [activeItemId, setActiveItem]);
-
-  useEffect(() => {
-    setSkin(activeSkinColor);
-  }, [activeSkinColor, setSkin]);
+  useEffect(() => { setOnStateChange(onStateChange); }, [onStateChange, setOnStateChange]);
+  useEffect(() => { setOnMoneyEarned(onMoneyEarned); }, [onMoneyEarned, setOnMoneyEarned]);
+  useEffect(() => { syncUnlockedItems(unlockedItems); }, [unlockedItems, syncUnlockedItems]);
+  useEffect(() => { syncMoney(money); }, [money, syncMoney]);
+  useEffect(() => { setActiveItem(activeItemId); }, [activeItemId, setActiveItem]);
+  useEffect(() => { setSkin(activeSkinColor); }, [activeSkinColor, setSkin]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -76,8 +60,8 @@ export function GameCanvas({
     <div className="stage-frame">
       <canvas
         ref={canvasRef}
-        width={1000}
-        height={650}
+        width={ROOM_WIDTH}
+        height={ROOM_HEIGHT}
         tabIndex={0}
         className="game-canvas"
         onMouseDown={handleMouseDown}
@@ -85,8 +69,8 @@ export function GameCanvas({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       />
-      <div className="stage-badge">G toggles gravity</div>
-      {lowGravity && <div className="gravity-badge">Low gravity</div>}
+      <div className="stage-badge">G — gravity</div>
+      {lowGravity && <div className="gravity-badge">⬆ Low gravity</div>}
     </div>
   );
 }

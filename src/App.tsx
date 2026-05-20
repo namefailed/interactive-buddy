@@ -3,12 +3,12 @@ import { GameCanvas } from './components/GameCanvas';
 import { Toolbar } from './components/Toolbar';
 import { useGameState } from './hooks/useGameState';
 import type { GameState } from './types';
-import { ITEMS, SKINS, getItem, getSkin } from './game/items';
+import { ITEMS, SKINS, getSkin } from './game/items';
 import './App.css';
 
-function meterStyle(value: number) {
-  return { width: Math.max(0, Math.min(100, value)) + '%' };
-}
+const MOOD_EMOJI: Record<string, string> = {
+  happy: '😊', neutral: '😐', sad: '😢', angry: '😠', scared: '😨',
+};
 
 export default function App() {
   const {
@@ -21,25 +21,16 @@ export default function App() {
     unlockSkin,
   } = useGameState();
 
-  const activeItem = getItem(state.activeItemId);
+
   const activeSkin = getSkin(state.activeSkinId ?? 'default') ?? SKINS[0];
 
-  const unlockedCount = useMemo(
-    () => state.unlockedItems.length + '/' + ITEMS.length,
-    [state.unlockedItems.length]
-  );
-
   const handleStateChange = useCallback(
-    (partial: Partial<GameState>) => {
-      updateFromEngine(partial);
-    },
+    (partial: Partial<GameState>) => { updateFromEngine(partial); },
     [updateFromEngine]
   );
 
   const handleMoneyEarned = useCallback(
-    (amount: number) => {
-      addMoney(amount);
-    },
+    (amount: number) => { addMoney(amount); },
     [addMoney]
   );
 
@@ -47,7 +38,7 @@ export default function App() {
     (itemId: string) => {
       const item = ITEMS.find(i => i.id === itemId);
       if (!item || state.money < item.cost) return;
-      updateFromEngine({ money: state.money - item.cost, reaction: item.name + ' added to the lab.' });
+      updateFromEngine({ money: state.money - item.cost, reaction: item.name + ' unlocked!' });
       unlockItem(itemId);
       setActiveItem(itemId);
     },
@@ -65,42 +56,51 @@ export default function App() {
     [state.money, updateFromEngine, unlockSkin, setActiveSkin]
   );
 
+  // Health dots: 10 dots
+  const healthDots = useMemo(() => {
+    const filled = Math.round((state.trust / 100) * 10); // use trust as "bond" proxy
+    const hp = state.stress;
+    const danger = hp > 60;
+    return Array.from({ length: 10 }, (_, i) => ({
+      filled: i < filled,
+      danger,
+    }));
+  }, [state.trust, state.stress]);
+
+  const unlockedCount = state.unlockedItems.length + '/' + ITEMS.length;
+
   return (
     <main className="app-shell">
-      <header className="top-bar">
-        <div className="brand-block">
-          <span className="status-dot" />
-          <div>
-            <p className="eyebrow">Studio Physics Pet</p>
-            <h1>Interactive Buddy</h1>
-          </div>
+      {/* ── Navbar ── */}
+      <header className="navbar">
+        <div className="nav-brand">
+          <span className="status-dot" style={{ background: activeSkin.color, boxShadow: `0 0 8px ${activeSkin.color}` }} />
+          <span className="nav-title">Blobby</span>
         </div>
-        <div className="status-cluster" aria-label="Game status">
-          <div className="stat-card money-card">
-            <span>Bank</span>
-            <strong>{'$'}{Math.floor(state.money)}</strong>
+
+        <nav className="nav-stats">
+          <div className="nav-stat money">
+            <span className="stat-icon">💰</span>
+            <span>${Math.floor(state.money)}</span>
           </div>
-          <div className="stat-card">
-            <span>Score</span>
-            <strong>{state.score}</strong>
+          <div className={`mood-pill ${state.mood}`}>
+            {MOOD_EMOJI[state.mood] ?? '😐'} {state.mood}
           </div>
-          <div className="stat-card compact">
-            <span>Tools</span>
-            <strong>{unlockedCount}</strong>
+          <div className="nav-stat">
+            <span className="stat-icon">⭐</span>
+            <span>{state.score.toLocaleString()}</span>
           </div>
-        </div>
+          <div className="nav-stat">
+            <span className="stat-icon">🔧</span>
+            <span>{unlockedCount}</span>
+          </div>
+        </nav>
       </header>
 
+      {/* ── Game Layout ── */}
       <section className="game-layout">
-        <section className="stage-column" aria-label="Interactive stage">
-          <div className="stage-header">
-            <div>
-              <p className="eyebrow">Active experiment</p>
-              <h2>{activeItem?.name ?? 'Fist'}</h2>
-            </div>
-            <div className={'mood-pill ' + state.mood}>{state.mood}</div>
-          </div>
-
+        {/* Canvas + Status */}
+        <section className="stage-area" aria-label="Interactive stage">
           <GameCanvas
             activeItemId={state.activeItemId}
             activeSkinColor={activeSkin.color}
@@ -110,24 +110,39 @@ export default function App() {
             onMoneyEarned={handleMoneyEarned}
           />
 
-          <div className="reaction-strip">
-            <div className="reaction-copy">
-              <span>Buddy signal</span>
-              <strong>{state.reaction}</strong>
+          {/* Slim status bar */}
+          <div className="status-bar">
+            <div className="reaction-text">
+              <span className="bubble-icon">💬</span>
+              <span>{state.reaction}</span>
             </div>
-            <div className="meter-grid">
-              <label>
-                <span>Trust</span>
-                <div className="meter"><i className="trust" style={meterStyle(state.trust)} /></div>
-              </label>
-              <label>
-                <span>Stress</span>
-                <div className="meter"><i className="stress" style={meterStyle(state.stress)} /></div>
-              </label>
+
+            <div className="trust-bar-wrap">
+              <span className="trust-label">Trust</span>
+              <div className="mini-bar">
+                <div className="mini-bar-fill trust" style={{ width: `${state.trust}%` }} />
+              </div>
+            </div>
+
+            <div className="trust-bar-wrap">
+              <span className="trust-label">Stress</span>
+              <div className="mini-bar">
+                <div className="mini-bar-fill stress" style={{ width: `${state.stress}%` }} />
+              </div>
+            </div>
+
+            <div className="health-dots" title={`Bond: ${Math.round(state.trust)}%`}>
+              {healthDots.map((d, i) => (
+                <span
+                  key={i}
+                  className={`health-dot ${d.filled ? 'filled' : ''} ${d.filled && d.danger ? 'danger' : ''}`}
+                />
+              ))}
             </div>
           </div>
         </section>
 
+        {/* Sidebar */}
         <Toolbar
           activeItemId={state.activeItemId}
           unlockedItems={state.unlockedItems}

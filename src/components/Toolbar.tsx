@@ -1,5 +1,5 @@
-import { ITEMS, SKINS, getItem, getSkin } from '../game/items';
-import type { ItemCategory, ToolItem } from '../types';
+import { ITEMS, SKINS, getSkin } from '../game/items';
+import type { ItemCategory, ItemTone, ToolItem } from '../types';
 
 interface ToolbarProps {
   activeItemId: string;
@@ -24,39 +24,83 @@ const categoryLabels: Record<ItemCategory, string> = {
 
 const categoryOrder: ItemCategory[] = ['hand', 'care', 'toy', 'mayhem', 'explosive', 'utility'];
 
-const itemTokens: Record<string, string> = {
-  fist: 'FST',
-  tickle: 'TKL',
-  comfort: 'PET',
-  treat: 'TRT',
-  grenade: 'GRN',
-  pistol: 'PST',
-  shotgun: 'SHG',
-  machinegun: 'MG',
-  flamethrower: 'FLM',
-  missile: 'MSL',
-  bowling: 'BWL',
-  fireball: 'FIR',
-  mine: 'MIN',
-  stun: 'STN',
-  rubberballs: 'RBR',
-  flail: 'FLA',
-  molotov: 'MOL',
-  gravity: 'GRV',
-  magicorb: 'ORB',
-  radio: 'RAD',
+const itemIcons: Record<string, string> = {
+  fist:       '🤜',
+  tickle:     '🪶',
+  comfort:    '🖐️',
+  treat:      '🍬',
+  grenade:    '💣',
+  pistol:     '🔫',
+  shotgun:    '💥',
+  machinegun: '🧨',
+  flamethrower:'🔥',
+  missile:    '🚀',
+  bowling:    '🎳',
+  fireball:   '☄️',
+  mine:       '🚨',
+  stun:       '⚡',
+  rubberballs:'🔴',
+  flail:      '⛓️',
+  molotov:    '🍾',
+  gravity:    '🌌',
+  magicorb:   '🔮',
+  radio:      '📻',
 };
+
+function ownedBadgeClass(tone: ItemTone): string {
+  return `tool-badge owned-${tone}`;
+}
+
+function ownedBadgeLabel(tone: ItemTone): string {
+  if (tone === 'care') return 'READY';
+  if (tone === 'violent') return 'ARMED';
+  return 'ACTIVE';
+}
 
 function groupedItems() {
   return categoryOrder
-    .map(category => ({ category, items: ITEMS.filter(item => item.category === category) }))
-    .filter(group => group.items.length > 0);
+    .map(cat => ({ cat, items: ITEMS.filter(i => i.category === cat) }))
+    .filter(g => g.items.length > 0);
 }
 
-function actionLabel(owned: boolean, canAfford: boolean, item: ToolItem) {
-  if (owned) return item.tone === 'care' ? 'Ready' : 'Armed';
-  if (canAfford) return 'Buy $' + item.cost;
-  return '$' + item.cost;
+function ToolCard({
+  item,
+  owned,
+  canAfford,
+  isActive,
+  onSelect,
+  onBuy,
+}: {
+  item: ToolItem;
+  owned: boolean;
+  canAfford: boolean;
+  isActive: boolean;
+  onSelect: () => void;
+  onBuy: () => void;
+}) {
+  const disabled = !owned && !canAfford;
+
+  let badge: { label: string; cls: string } | null = null;
+  if (owned) {
+    badge = { label: ownedBadgeLabel(item.tone), cls: ownedBadgeClass(item.tone) };
+  } else if (canAfford) {
+    badge = { label: `$${item.cost}`, cls: 'tool-badge buy' };
+  } else {
+    badge = { label: `$${item.cost}`, cls: 'tool-badge locked' };
+  }
+
+  return (
+    <button
+      className={`tool-card ${isActive ? 'active' : ''} ${item.tone}`}
+      disabled={disabled}
+      title={item.description}
+      onClick={() => owned ? onSelect() : canAfford ? onBuy() : undefined}
+    >
+      <span className="tool-icon">{itemIcons[item.id] ?? '🔧'}</span>
+      <span className="tool-name">{item.name}</span>
+      {badge && <span className={badge.cls}>{badge.label}</span>}
+    </button>
+  );
 }
 
 export function Toolbar({
@@ -70,91 +114,66 @@ export function Toolbar({
   onBuyItem,
   onBuySkin,
 }: ToolbarProps) {
-  const activeItem = getItem(activeItemId);
   const activeSkin = getSkin(activeSkinId ?? 'default');
+  void activeSkin; // used for active class
 
   return (
     <aside className="tool-dock" aria-label="Studio controls">
-      <header className="dock-header">
-        <span className="eyebrow">Loadout</span>
-        <strong>{activeItem?.name ?? 'No tool'}</strong>
-        <small>{activeItem?.description}</small>
-      </header>
-
       <div className="dock-scroll">
-        {groupedItems().map(group => (
-          <section className="tool-section" key={group.category}>
+        {groupedItems().map(({ cat, items }) => (
+          <section className="tool-section" key={cat}>
             <div className="section-heading">
-              <span>{categoryLabels[group.category]}</span>
-              <span>{group.items.length}</span>
+              <span>{categoryLabels[cat]}</span>
+              <span className="section-count">{items.filter(i => unlockedItems.includes(i.id)).length}/{items.length}</span>
             </div>
             <div className="tool-list">
-              {group.items.map(item => {
-                const owned = unlockedItems.includes(item.id);
-                const canAfford = money >= item.cost;
-                const isActive = activeItemId === item.id;
-                const disabled = !owned && !canAfford;
-
-                return (
-                  <button
-                    className={'tool-card ' + (isActive ? 'active ' : '') + (owned ? 'owned ' : 'locked ') + item.tone}
-                    disabled={disabled}
-                    key={item.id}
-                    title={item.description}
-                    onClick={() => {
-                      if (owned) onSelectItem(item.id);
-                      else if (canAfford) onBuyItem(item.id);
-                    }}
-                  >
-                    <span className="tool-token">{itemTokens[item.id] ?? item.name.slice(0, 3).toUpperCase()}</span>
-                    <span className="tool-copy">
-                      <strong>{item.name}</strong>
-                      <small>{item.description}</small>
-                    </span>
-                    <span className="tool-meta">{actionLabel(owned, canAfford, item)}</span>
-                  </button>
-                );
-              })}
+              {items.map(item => (
+                <ToolCard
+                  key={item.id}
+                  item={item}
+                  owned={unlockedItems.includes(item.id)}
+                  canAfford={money >= item.cost}
+                  isActive={activeItemId === item.id}
+                  onSelect={() => onSelectItem(item.id)}
+                  onBuy={() => onBuyItem(item.id)}
+                />
+              ))}
             </div>
           </section>
         ))}
 
-        <section className="tool-section skins-section">
-          <div className="section-heading">
-            <span>Skins</span>
-            <span>{unlockedSkins.length}/{SKINS.length}</span>
+        {/* Skins */}
+        <section className="tool-section">
+          <div className="section-heading skin-section-label">
+            <span>Appearance</span>
+            <span className="section-count">{unlockedSkins.length}/{SKINS.length}</span>
           </div>
           <div className="skin-grid">
             {SKINS.map(skin => {
               const owned = unlockedSkins.includes(skin.id) || skin.cost === 0;
               const canAfford = money >= skin.cost;
               const isActive = activeSkinId === skin.id;
-              const disabled = !owned && !canAfford;
 
               return (
                 <button
-                  className={'skin-card ' + (isActive ? 'active' : '')}
-                  disabled={disabled}
                   key={skin.id}
+                  className={`skin-btn ${isActive ? 'active' : ''}`}
+                  disabled={!owned && !canAfford}
+                  title={skin.name + (owned ? '' : ` — $${skin.cost}`)}
                   onClick={() => {
                     if (owned) onSelectSkin(skin.id);
                     else if (canAfford) onBuySkin(skin.id);
                   }}
                 >
                   <span className="skin-swatch" style={{ backgroundColor: skin.color }} />
-                  <span>{skin.name}</span>
-                  {!owned && <small>Cost {skin.cost}</small>}
+                  <span className="skin-label">{skin.name.replace(' Buddy', '').replace('Buddy', 'Base')}</span>
+                  {!owned && <span className="skin-cost">${skin.cost}</span>}
                 </button>
               );
             })}
           </div>
         </section>
       </div>
-
-      <footer className="dock-footer">
-        <span>Suit</span>
-        <strong>{activeSkin?.name ?? 'Buddy'}</strong>
-      </footer>
     </aside>
   );
 }

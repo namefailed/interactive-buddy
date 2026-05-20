@@ -33,35 +33,49 @@ export function drawRoom(ctx: CanvasRenderingContext2D, screenshake: number): vo
     ctx.translate((Math.random() - 0.5) * screenshake * 1.6, (Math.random() - 0.5) * screenshake * 1.6);
   }
 
+  // Background gradient
   const grad = ctx.createLinearGradient(0, 0, 0, ROOM_HEIGHT);
-  grad.addColorStop(0, '#ffffff');
-  grad.addColorStop(1, '#f1f5f9');
+  grad.addColorStop(0, '#05080f');
+  grad.addColorStop(1, '#020409');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 
-  const backGlow = ctx.createRadialGradient(ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 20, ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 400);
-  backGlow.addColorStop(0, 'rgba(254,215,170,0.4)');
+  // Subtle center glow
+  const backGlow = ctx.createRadialGradient(ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 20, ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 340);
+  backGlow.addColorStop(0, 'rgba(124, 58, 237, 0.08)');
   backGlow.addColorStop(1, 'transparent');
   ctx.fillStyle = backGlow;
   ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 
-  ctx.fillStyle = 'rgba(148,163,184,0.08)';
-  for (let x = 0; x < ROOM_WIDTH; x += 50) {
-    ctx.fillRect(x, 0, 1, ROOM_HEIGHT);
-  }
-  for (let y = 0; y < ROOM_HEIGHT; y += 50) {
-    ctx.fillRect(0, y, ROOM_WIDTH, 1);
-  }
+  // Subtle grid
+  ctx.fillStyle = 'rgba(255,255,255,0.018)';
+  for (let x = 0; x < ROOM_WIDTH; x += 50) ctx.fillRect(x, 0, 1, ROOM_HEIGHT);
+  for (let y = 0; y < ROOM_HEIGHT; y += 50) ctx.fillRect(0, y, ROOM_WIDTH, 1);
 
-  const floor = ctx.createLinearGradient(0, ROOM_HEIGHT - 115, 0, ROOM_HEIGHT);
-  floor.addColorStop(0, '#e2e8f0');
-  floor.addColorStop(1, '#cbd5e1');
+  // Floor
+  const floor = ctx.createLinearGradient(0, ROOM_HEIGHT - 100, 0, ROOM_HEIGHT);
+  floor.addColorStop(0, '#0f1829');
+  floor.addColorStop(1, '#080d18');
   ctx.fillStyle = floor;
-  ctx.fillRect(0, ROOM_HEIGHT - 115, ROOM_WIDTH, 115);
+  ctx.fillRect(0, ROOM_HEIGHT - 100, ROOM_WIDTH, 100);
 
-  ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, ROOM_WIDTH - 2, ROOM_HEIGHT - 2);
+  // Floor line
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, ROOM_HEIGHT - 100);
+  ctx.lineTo(ROOM_WIDTH, ROOM_HEIGHT - 100);
+  ctx.stroke();
+
+  // Vignette — darkens corners, makes it feel like a lit stage
+  const vignette = ctx.createRadialGradient(
+    ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.5, ROOM_HEIGHT * 0.1,
+    ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.5, ROOM_WIDTH * 0.75
+  );
+  vignette.addColorStop(0, 'transparent');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 }
 
 export function drawProps(ctx: CanvasRenderingContext2D, props: Matter.Body[]): void {
@@ -281,65 +295,92 @@ export function drawBuddy(ctx: CanvasRenderingContext2D, parts: Matter.Body[], c
   ctx.fillStyle = floorGlow;
   ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 
-  if (head && torso) {
-    ctx.strokeStyle = darken(color, 30);
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(head.position.x, head.position.y + 14);
-    ctx.lineTo(torso.position.x, torso.position.y - 14);
+  const drawConnections = () => {
+    if (!head || !torso) return;
+    
+    // Neck
+    ctx.beginPath(); 
+    ctx.moveTo(head.position.x, head.position.y + 10); 
+    ctx.lineTo(torso.position.x, torso.position.y - 10); 
     ctx.stroke();
-  }
 
-  for (const part of parts) {
-    if (part.label === 'buddy-head') continue;
-    if (torso && part.label !== 'buddy-torso') {
-      ctx.strokeStyle = darken(color, 30);
-      ctx.lineWidth = 3.5;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(torso.position.x, torso.position.y);
-      ctx.lineTo(part.position.x, part.position.y);
+    for (const part of parts) {
+      if (part.label === 'buddy-head' || part.label === 'buddy-torso' || part.label === 'buddy-ear') continue;
+      // Limbs to torso
+      ctx.beginPath(); 
+      ctx.moveTo(torso.position.x, torso.position.y); 
+      ctx.lineTo(part.position.x, part.position.y); 
       ctx.stroke();
     }
-  }
 
-  for (const part of parts) {
-    const verts = part.vertices;
-    ctx.beginPath();
-    ctx.moveTo(verts[0].x, verts[0].y);
-    for (let j = 1; j < verts.length; j++) ctx.lineTo(verts[j].x, verts[j].y);
-    ctx.closePath();
-
-    const cr = part.circleRadius;
-    if (cr) {
-      const g = ctx.createRadialGradient(
-        part.position.x - cr * 0.3, part.position.y - cr * 0.3, 2,
-        part.position.x, part.position.y, cr,
-      );
-      g.addColorStop(0, '#ffffff');
-      g.addColorStop(0.3, lighten(color, 30));
-      g.addColorStop(0.75, color);
-      g.addColorStop(1, darken(color, 25));
-      ctx.fillStyle = g;
-      ctx.fill();
-    } else {
-      const bw = part.bounds.max.x - part.bounds.min.x;
-      const bh = part.bounds.max.y - part.bounds.min.y;
-      const g = ctx.createRadialGradient(
-        part.position.x - bw * 0.15, part.position.y - bh * 0.15, 2,
-        part.position.x, part.position.y, Math.max(bw, bh) * 0.7,
-      );
-      g.addColorStop(0, lighten(color, 45));
-      g.addColorStop(0.4, color);
-      g.addColorStop(1, darken(color, 30));
-      ctx.fillStyle = g;
-      ctx.fill();
+    // Ears to head
+    const ears = parts.filter(p => p.label === 'buddy-ear');
+    for (const ear of ears) {
+      ctx.beginPath(); 
+      ctx.moveTo(head.position.x, head.position.y); 
+      ctx.lineTo(ear.position.x, ear.position.y); 
+      ctx.stroke();
     }
+  };
 
-    ctx.strokeStyle = darken(color, 50);
-    ctx.lineWidth = cr ? 2 : 2.5;
-    ctx.stroke();
+  const drawShapes = (isStroke: boolean) => {
+    for (const part of parts) {
+      const cr = part.circleRadius;
+      ctx.beginPath();
+      if (cr) {
+        ctx.arc(part.position.x, part.position.y, cr, 0, Math.PI * 2);
+      } else {
+        const verts = part.vertices;
+        ctx.moveTo(verts[0].x, verts[0].y);
+        for (let j = 1; j < verts.length; j++) ctx.lineTo(verts[j].x, verts[j].y);
+        ctx.closePath();
+      }
+      if (isStroke) ctx.stroke();
+      else ctx.fill();
+    }
+  };
+
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  // --- PASS 1: Outline ---
+  ctx.strokeStyle = darken(color, 60);
+  ctx.lineWidth = 34; // thick connection outlines
+  drawConnections();
+  ctx.lineWidth = 6;  // shape outlines
+  drawShapes(true);
+
+  // --- PASS 2: Solid Fill ---
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 28; // fill connections
+  drawConnections();
+  drawShapes(false);
+
+  // --- PASS 3: Cute Highlights & Shading ---
+  for (const part of parts) {
+    const cr = part.circleRadius;
+    const size = cr ? cr : (part.bounds.max.x - part.bounds.min.x) * 0.5;
+    
+    const g = ctx.createRadialGradient(
+      part.position.x - size * 0.3, part.position.y - size * 0.3, 2,
+      part.position.x, part.position.y, size * 1.5
+    );
+    g.addColorStop(0, lighten(color, 30));
+    g.addColorStop(0.5, 'rgba(255,255,255,0)');
+    g.addColorStop(1, darken(color, 20));
+
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    if (cr) {
+      ctx.arc(part.position.x, part.position.y, cr, 0, Math.PI * 2);
+    } else {
+      const verts = part.vertices;
+      ctx.moveTo(verts[0].x, verts[0].y);
+      for (let j = 1; j < verts.length; j++) ctx.lineTo(verts[j].x, verts[j].y);
+      ctx.closePath();
+    }
+    ctx.fill();
   }
 
   ctx.restore();
@@ -366,80 +407,39 @@ export function drawMoneyPopups(ctx: CanvasRenderingContext2D, popups: { x: numb
   for (const p of popups) {
     const a = p.life / 40;
     ctx.globalAlpha = a;
-    ctx.fillStyle = '#ffd700';
-    ctx.font = 'bold 14px sans-serif';
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = '700 14px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.shadowColor = '#ffd700';
-    ctx.shadowBlur = 8;
+    ctx.shadowColor = '#f59e0b';
+    ctx.shadowBlur = 10;
     ctx.fillText(p.text, p.x, p.y - (1 - a) * 30);
   }
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 1;
 }
 
-export function drawMoodIndicator(ctx: CanvasRenderingContext2D, mood: Mood): void {
-  const x = 24;
-  const y = 24;
-  const r = 22;
-
-  ctx.fillStyle = 'rgba(255,255,255,0.8)';
-  ctx.beginPath();
-  ctx.arc(x, y, r + 2, 0, Math.PI * 2);
-  ctx.fill();
-
-  const moodColors: Record<Mood, string> = {
-    happy: '#34d399',
-    neutral: '#fbbf24',
-    sad: '#60a5fa',
-    angry: '#f43f5e',
-    scared: '#a78bfa',
-  };
-
-  ctx.fillStyle = moodColors[mood];
-  ctx.beginPath();
-  ctx.arc(x, y, r - 2, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 14px sans-serif';
+export function drawActiveItemLabel(ctx: CanvasRenderingContext2D, itemName: string): void {
+  const label = itemName;
+  ctx.font = '600 11px Inter, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const labels: Record<Mood, string> = {
-    happy: 'YAY',
-    neutral: '-_-',
-    sad: ';(',
-    angry: '>_<',
-    scared: 'O_O',
-  };
-  ctx.fillText(labels[mood], x, y + 1);
-}
 
-export function drawHUD(ctx: CanvasRenderingContext2D, money: number, health: number, activeItemName: string): void {
-  const pad = 16;
+  const metrics = ctx.measureText(label);
+  const pw = metrics.width + 20;
+  const ph = 22;
+  const px = ROOM_WIDTH / 2 - pw / 2;
+  const py = ROOM_HEIGHT - 18 - ph / 2;
 
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  roundRect(ctx, ROOM_WIDTH - 180, pad, 160, 40, 12);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(ctx, px, py, pw, ph, 11);
   ctx.fill();
-  
-  ctx.strokeStyle = 'rgba(148,163,184,0.1)';
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  ctx.fillStyle = '#f59e0b';
-  ctx.font = '800 18px sans-serif';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`$${Math.floor(money)}`, ROOM_WIDTH - 24, pad + 20);
-
-  ctx.fillStyle = health > 30 ? '#10b981' : '#f43f5e';
-  ctx.font = '13px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`â ¤ ${Math.max(0, Math.floor(health))}`, ROOM_WIDTH - 170, pad + 20);
-
-  ctx.fillStyle = 'rgba(100,116,139,0.5)';
-  ctx.font = '600 12px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
-  ctx.fillText(`ðŸ”§ ${activeItemName}`, ROOM_WIDTH / 2, ROOM_HEIGHT - 12);
+  ctx.fillStyle = 'rgba(148,163,184,0.9)';
+  ctx.fillText(label, ROOM_WIDTH / 2, py + ph / 2);
 }
+
 
