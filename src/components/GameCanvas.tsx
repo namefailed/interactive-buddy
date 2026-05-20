@@ -76,8 +76,8 @@ export function GameCanvas({
     <div className="stage-frame">
       <canvas
         ref={canvasRef}
-        width={800}
-        height={500}
+        width={1000}
+        height={650}
         tabIndex={0}
         className="game-canvas"
         onMouseDown={handleMouseDown}

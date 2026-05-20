@@ -34,20 +34,18 @@ export function drawRoom(ctx: CanvasRenderingContext2D, screenshake: number): vo
   }
 
   const grad = ctx.createLinearGradient(0, 0, 0, ROOM_HEIGHT);
-  grad.addColorStop(0, '#171a20');
-  grad.addColorStop(0.55, '#111821');
-  grad.addColorStop(1, '#171512');
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(1, '#f1f5f9');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 
-  const backGlow = ctx.createRadialGradient(ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 20, ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 360);
-  backGlow.addColorStop(0, 'rgba(45,212,191,0.14)');
-  backGlow.addColorStop(0.58, 'rgba(244,114,182,0.05)');
+  const backGlow = ctx.createRadialGradient(ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 20, ROOM_WIDTH * 0.5, ROOM_HEIGHT * 0.45, 400);
+  backGlow.addColorStop(0, 'rgba(254,215,170,0.4)');
   backGlow.addColorStop(1, 'transparent');
   ctx.fillStyle = backGlow;
   ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
 
-  ctx.fillStyle = 'rgba(255,255,255,0.035)';
+  ctx.fillStyle = 'rgba(148,163,184,0.08)';
   for (let x = 0; x < ROOM_WIDTH; x += 50) {
     ctx.fillRect(x, 0, 1, ROOM_HEIGHT);
   }
@@ -56,151 +54,229 @@ export function drawRoom(ctx: CanvasRenderingContext2D, screenshake: number): vo
   }
 
   const floor = ctx.createLinearGradient(0, ROOM_HEIGHT - 115, 0, ROOM_HEIGHT);
-  floor.addColorStop(0, 'rgba(255,255,255,0.02)');
-  floor.addColorStop(1, 'rgba(250,204,21,0.10)');
+  floor.addColorStop(0, '#e2e8f0');
+  floor.addColorStop(1, '#cbd5e1');
   ctx.fillStyle = floor;
   ctx.fillRect(0, ROOM_HEIGHT - 115, ROOM_WIDTH, 115);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+  ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, ROOM_WIDTH - 2, ROOM_HEIGHT - 2);
 }
 
 export function drawProps(ctx: CanvasRenderingContext2D, props: Matter.Body[]): void {
   for (const p of props) {
-    const r = p.circleRadius;
-    if (r) {
-      const g = ctx.createRadialGradient(p.position.x - 3, p.position.y - 3, 2, p.position.x, p.position.y, r);
-      g.addColorStop(0, '#ffffff');
-      g.addColorStop(0.3, '#e0e0e0');
-      g.addColorStop(1, '#999999');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(p.position.x, p.position.y, r, 0, Math.PI * 2);
+    ctx.save();
+    ctx.translate(p.position.x, p.position.y);
+    ctx.rotate(p.angle);
+
+    if (p.label === 'prop-treat') {
+      ctx.fillStyle = '#2ecc71';
+      roundRect(ctx, -10, -5, 20, 10, 4);
       ctx.fill();
-      ctx.strokeStyle = '#666';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#27ae60';
+      ctx.lineWidth = 2;
       ctx.stroke();
+    } else if (p.label === 'prop-grenade') {
+      ctx.fillStyle = '#2c3e50';
+      ctx.beginPath();
+      ctx.arc(0, 0, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#7f8c8d';
+      ctx.fillRect(-3, -12, 6, 4);
+      ctx.strokeStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.arc(3, -13, 3, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (p.label === 'prop-mine') {
+      ctx.fillStyle = '#34495e';
+      roundRect(ctx, -12, -4, 24, 8, 2);
+      ctx.fill();
+      ctx.fillStyle = (Date.now() % 1000 < 500) ? '#e74c3c' : '#c0392b';
+      ctx.beginPath();
+      ctx.arc(0, -4, 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.label === 'prop-bowling') {
+      ctx.fillStyle = '#2c3e50';
+      ctx.beginPath();
+      ctx.arc(0, 0, 25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(8, -8, 3, 0, Math.PI * 2);
+      ctx.arc(15, -2, 3, 0, Math.PI * 2);
+      ctx.arc(12, 6, 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.label === 'prop-rubberball') {
+      const r = p.circleRadius || 10;
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#c0392b';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else if (p.label === 'prop-blackhole') {
+      const pulse = 1 + Math.sin(Date.now() / 150) * 0.15;
+      
+      const grad = ctx.createRadialGradient(0, 0, 5, 0, 0, 50 * pulse);
+      grad.addColorStop(0, '#000000');
+      grad.addColorStop(0.2, '#0f172a');
+      grad.addColorStop(0.6, 'rgba(76, 29, 149, 0.4)');
+      grad.addColorStop(1, 'transparent');
+      
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 50 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(167, 139, 250, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 30 * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.fill();
     } else {
-      const w = 36, h = 36;
-      const x = p.position.x - w / 2, y = p.position.y - h / 2;
-      ctx.fillStyle = '#8B6914';
-      roundRect(ctx, x, y, w, h, 3);
-      ctx.fill();
-      ctx.strokeStyle = '#6B4F12';
-      ctx.lineWidth = 1.5;
-      roundRect(ctx, x, y, w, h, 3);
-      ctx.stroke();
-      ctx.strokeStyle = '#6B4F12';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x + w * 0.5, y); ctx.lineTo(x + w * 0.5, y + h);
-      ctx.moveTo(x, y + h * 0.5); ctx.lineTo(x + w, y + h * 0.5);
-      ctx.stroke();
+      // Fallback
+      const r = p.circleRadius;
+      if (r) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = '#d97706';
+        ctx.fillRect(-18, -18, 36, 36);
+      }
     }
+    
+    ctx.restore();
   }
 }
 
-function drawFace(ctx: CanvasRenderingContext2D, x: number, y: number, mood: Mood): void {
+function drawFace(ctx: CanvasRenderingContext2D, x: number, y: number, mood: Mood, isAsleep: boolean): void {
   ctx.save();
 
-  const glow = mood === 'happy' ? '#2ecc7133' : mood === 'angry' ? '#e74c3c33' : mood === 'scared' ? '#9b59b633' : 'transparent';
-  if (glow !== 'transparent') {
-    ctx.shadowColor = glow;
-    ctx.shadowBlur = 25;
-    ctx.fillStyle = glow;
+  // Cute blush
+  if (!isAsleep) {
+    ctx.fillStyle = 'rgba(244, 63, 94, 0.25)';
     ctx.beginPath();
-    ctx.arc(x, y, 30, 0, Math.PI * 2);
+    ctx.ellipse(x - 12, y + 2, 4, 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + 12, y + 2, 4, 2, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
   }
 
   const eyeOff = 8;
   const eyeY = y - 3;
-  const eyeScale = 1.3;
+  const eyeScale = 1.4;
 
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.ellipse(x - eyeOff, eyeY, 5.5 * eyeScale, 6.5 * eyeScale, 0, 0, Math.PI * 2);
-  ctx.ellipse(x + eyeOff, eyeY, 5.5 * eyeScale, 6.5 * eyeScale, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  const px = mood === 'scared' ? 2 : mood === 'angry' ? -1.5 : 0;
-  ctx.fillStyle = '#1a1a2e';
-  ctx.beginPath();
-  ctx.arc(x - eyeOff + px, eyeY, 3, 0, Math.PI * 2);
-  ctx.arc(x + eyeOff + px, eyeY, 3, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(x - eyeOff + px - 0.8, eyeY - 1, 1.2, 0, Math.PI * 2);
-  ctx.arc(x + eyeOff + px - 0.8, eyeY - 1, 1.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (mood === 'scared') {
-    ctx.fillStyle = '#fff';
+  if (isAsleep) {
+    // Sleeping eyes
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    
     ctx.beginPath();
-    ctx.arc(x - eyeOff - 1, eyeY - 1.5, 1, 0, Math.PI * 2);
-    ctx.arc(x + eyeOff - 1, eyeY - 1.5, 1, 0, Math.PI * 2);
+    ctx.arc(x - eyeOff, eyeY + 2, 5, 0, Math.PI, true);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.arc(x + eyeOff, eyeY + 2, 5, 0, Math.PI, true);
+    ctx.stroke();
+
+    // Zzz's
+    const time = Date.now();
+    ctx.fillStyle = '#64748b';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('z', x + 10 + Math.sin(time/500)*5, y - 20 - (time%2000)/100);
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText('Z', x + 20 + Math.sin(time/400)*5, y - 35 - ((time+500)%2000)/100);
+    
+  } else {
+    // Open eyes
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(x - eyeOff, eyeY, 5.5 * eyeScale, 6.5 * eyeScale, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + eyeOff, eyeY, 5.5 * eyeScale, 6.5 * eyeScale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const px = mood === 'scared' ? 2 : mood === 'angry' ? -1.5 : 0;
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(x - eyeOff + px, eyeY, 3.5, 0, Math.PI * 2);
+    ctx.arc(x + eyeOff + px, eyeY, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye catchlights (cute anime glint)
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x - eyeOff + px - 1, eyeY - 2, 1.5, 0, Math.PI * 2);
+    ctx.arc(x + eyeOff + px - 1, eyeY - 2, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x - eyeOff + px + 1.5, eyeY + 1.5, 0.8, 0, Math.PI * 2);
+    ctx.arc(x + eyeOff + px + 1.5, eyeY + 1.5, 0.8, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  ctx.strokeStyle = '#1a1a2e';
+  // Mouth
+  ctx.strokeStyle = '#0f172a';
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  switch (mood) {
-    case 'happy':
-      ctx.arc(x, y + 8, 10, 0.15, Math.PI - 0.15);
-      break;
-    case 'sad':
-      ctx.arc(x, y + 22, 10, Math.PI + 0.3, Math.PI * 2 - 0.3);
-      break;
-    case 'angry':
-      ctx.moveTo(x - 10, y + 11);
-      ctx.lineTo(x, y + 4);
-      ctx.lineTo(x + 10, y + 11);
-      break;
-    case 'scared':
-      ctx.arc(x, y + 13, 8, 0, Math.PI * 2);
-      break;
-    default:
-      ctx.moveTo(x - 7, y + 7);
-      ctx.lineTo(x + 7, y + 7);
+  if (isAsleep) {
+    ctx.arc(x, y + 8, 3, 0, Math.PI * 2);
+  } else {
+    switch (mood) {
+      case 'happy':
+        // Cute cat mouth (omega)
+        ctx.arc(x - 3, y + 8, 3, 0, Math.PI);
+        ctx.arc(x + 3, y + 8, 3, 0, Math.PI);
+        break;
+      case 'sad':
+        ctx.arc(x, y + 14, 5, Math.PI, 0);
+        break;
+      case 'angry':
+        ctx.moveTo(x - 4, y + 9);
+        ctx.lineTo(x, y + 6);
+        ctx.lineTo(x + 4, y + 9);
+        break;
+      case 'scared':
+        ctx.ellipse(x, y + 10, 3, 5, 0, 0, Math.PI*2);
+        break;
+      default:
+        // Small smile
+        ctx.arc(x, y + 7, 4, 0.2, Math.PI - 0.2);
+    }
   }
   ctx.stroke();
 
-  if (mood === 'angry') {
-    ctx.strokeStyle = '#e74c3c';
+  if (mood === 'angry' && !isAsleep) {
+    ctx.strokeStyle = '#f43f5e';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(x - eyeOff - 7, eyeY - 9);
-    ctx.lineTo(x - eyeOff + 2, eyeY - 4);
-    ctx.moveTo(x + eyeOff + 7, eyeY - 9);
-    ctx.lineTo(x + eyeOff - 2, eyeY - 4);
+    ctx.moveTo(x - eyeOff - 5, eyeY - 8);
+    ctx.lineTo(x - eyeOff + 2, eyeY - 5);
+    ctx.moveTo(x + eyeOff + 5, eyeY - 8);
+    ctx.lineTo(x + eyeOff - 2, eyeY - 5);
     ctx.stroke();
-  }
-
-  if (mood === 'sad') {
-    ctx.fillStyle = 'rgba(52,152,219,0.25)';
-    ctx.beginPath();
-    ctx.arc(x - eyeOff, eyeY + 12, 4, 0, Math.PI * 2);
-    ctx.arc(x + eyeOff, eyeY + 12, 4, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   ctx.restore();
 }
 
-export function drawBuddy(ctx: CanvasRenderingContext2D, parts: Matter.Body[], color: string, mood: Mood): void {
+export function drawBuddy(ctx: CanvasRenderingContext2D, parts: Matter.Body[], color: string, mood: Mood, aiStateStr?: string): void {
   const torso = parts.find(p => p.label === 'buddy-torso');
   const head = parts.find(p => p.label === 'buddy-head');
 
   ctx.save();
 
-  const floorGlow = ctx.createRadialGradient(400, ROOM_HEIGHT - 30, 10, 400, ROOM_HEIGHT - 30, 120);
-  floorGlow.addColorStop(0, `${color}22`);
+  const floorGlow = ctx.createRadialGradient(ROOM_WIDTH/2, ROOM_HEIGHT - 30, 20, ROOM_WIDTH/2, ROOM_HEIGHT - 30, 180);
+  floorGlow.addColorStop(0, `${color}44`);
   floorGlow.addColorStop(1, 'transparent');
   ctx.fillStyle = floorGlow;
   ctx.fillRect(0, 0, ROOM_WIDTH, ROOM_HEIGHT);
@@ -268,7 +344,7 @@ export function drawBuddy(ctx: CanvasRenderingContext2D, parts: Matter.Body[], c
 
   ctx.restore();
 
-  if (head) drawFace(ctx, head.position.x, head.position.y, mood);
+  if (head) drawFace(ctx, head.position.x, head.position.y, mood, aiStateStr === 'sleep');
 }
 
 export function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]): void {
@@ -306,17 +382,17 @@ export function drawMoodIndicator(ctx: CanvasRenderingContext2D, mood: Mood): vo
   const y = 24;
   const r = 22;
 
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
   ctx.beginPath();
   ctx.arc(x, y, r + 2, 0, Math.PI * 2);
   ctx.fill();
 
   const moodColors: Record<Mood, string> = {
-    happy: '#2ecc71',
-    neutral: '#f39c12',
-    sad: '#3498db',
-    angry: '#e74c3c',
-    scared: '#9b59b6',
+    happy: '#34d399',
+    neutral: '#fbbf24',
+    sad: '#60a5fa',
+    angry: '#f43f5e',
+    scared: '#a78bfa',
   };
 
   ctx.fillStyle = moodColors[mood];
@@ -329,45 +405,41 @@ export function drawMoodIndicator(ctx: CanvasRenderingContext2D, mood: Mood): vo
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const labels: Record<Mood, string> = {
-    happy: 'OK',
-    neutral: '--',
-    sad: '..',
-    angry: '!!',
-    scared: '??',
+    happy: 'YAY',
+    neutral: '-_-',
+    sad: ';(',
+    angry: '>_<',
+    scared: 'O_O',
   };
   ctx.fillText(labels[mood], x, y + 1);
 }
 
 export function drawHUD(ctx: CanvasRenderingContext2D, money: number, health: number, activeItemName: string): void {
-  const pad = 12;
+  const pad = 16;
 
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  roundRect(ctx, ROOM_WIDTH - 170, pad, 158, 34, 8);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  roundRect(ctx, ROOM_WIDTH - 180, pad, 160, 40, 12);
   ctx.fill();
+  
+  ctx.strokeStyle = 'rgba(148,163,184,0.1)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
 
-  ctx.fillStyle = '#ffd700';
-  ctx.font = 'bold 18px sans-serif';
+  ctx.fillStyle = '#f59e0b';
+  ctx.font = '800 18px sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`$${Math.floor(money)}`, ROOM_WIDTH - 20, pad + 17);
+  ctx.fillText(`$${Math.floor(money)}`, ROOM_WIDTH - 24, pad + 20);
 
-  ctx.fillStyle = health > 30 ? '#2ecc71' : '#e74c3c';
-  ctx.font = '12px sans-serif';
+  ctx.fillStyle = health > 30 ? '#10b981' : '#f43f5e';
+  ctx.font = '13px sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`â¤ ${Math.max(0, Math.floor(health))}`, ROOM_WIDTH - 162, pad + 17);
+  ctx.fillText(`â ¤ ${Math.max(0, Math.floor(health))}`, ROOM_WIDTH - 170, pad + 20);
 
-  const hpPct = health / 100;
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  roundRect(ctx, ROOM_WIDTH - 162, pad + 22, 140, 5, 3);
-  ctx.fill();
-  ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
-  roundRect(ctx, ROOM_WIDTH - 162, pad + 22, 140 * hpPct, 5, 3);
-  ctx.fill();
-
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.font = '11px sans-serif';
+  ctx.fillStyle = 'rgba(100,116,139,0.5)';
+  ctx.font = '600 12px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(`ðŸ”§ ${activeItemName}`, ROOM_WIDTH / 2, ROOM_HEIGHT - 8);
+  ctx.fillText(`ðŸ”§ ${activeItemName}`, ROOM_WIDTH / 2, ROOM_HEIGHT - 12);
 }
 

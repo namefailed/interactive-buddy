@@ -14,6 +14,11 @@ const bd = Bodies as unknown as {
 
 const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 
+export interface TimedProp {
+  body: Matter.Body;
+  timer: number;
+}
+
 export interface GameEngineState {
   buddyBodies: Matter.Body[];
   buddyConstraints: Matter.Constraint[];
@@ -49,6 +54,8 @@ export class GameEngine {
   lastTimestamp = 0;
   ai: AIState;
   props: Matter.Body[] = [];
+  activeGrenades: TimedProp[] = [];
+  activeBlackholes: TimedProp[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -68,6 +75,36 @@ export class GameEngine {
     this.props = this.createProps();
 
     World.add(this.engine.world, [...this.room, ...bodies, ...constraints, ...this.props]);
+
+    Matter.Events.on(this.engine, 'collisionStart', (event) => this.handleCollisions(event));
+  }
+
+  private handleCollisions(event: Matter.IEventCollision<Matter.Engine>): void {
+    const pairs = event.pairs;
+    for (const pair of pairs) {
+      const { bodyA, bodyB } = pair;
+      this.checkPropCollision(bodyA, bodyB);
+      this.checkPropCollision(bodyB, bodyA);
+    }
+  }
+
+  private checkPropCollision(prop: Matter.Body, other: Matter.Body): void {
+    if (!prop.label.startsWith('prop-')) return;
+    if (other.label.startsWith('buddy-') || other.label === 'explosion') {
+      if (prop.label === 'prop-treat' && other.label.startsWith('buddy-')) {
+        this.applyCare(prop.position.x, prop.position.y, 15, 18, 4, 'Snack accepted. Trust climbs.');
+        this.removeProp(prop);
+      } else if (prop.label === 'prop-mine' && other.label.startsWith('buddy-')) {
+        this.spawnExplosion(prop.position.x, prop.position.y, 45);
+        this.applyDamage(50);
+        this.removeProp(prop);
+      }
+    }
+  }
+
+  private removeProp(prop: Matter.Body): void {
+    World.remove(this.engine.world, prop);
+    this.props = this.props.filter(p => p !== prop);
   }
 
   private createInitialState(): GameEngineState {
@@ -110,7 +147,7 @@ export class GameEngine {
   private createBuddy(): { bodies: Matter.Body[]; constraints: Matter.Constraint[] } {
     const cx = ROOM_WIDTH / 2;
     const cy = ROOM_HEIGHT - 100;
-    const r = BUDDY_RADIUS;
+    const r = BUDDY_RADIUS; // typically ~20
     const constraints: Matter.Constraint[] = [];
     const parts: Matter.Body[] = [];
     const group = Body.nextGroup(true);
@@ -123,21 +160,28 @@ export class GameEngine {
       collisionFilter: { group },
     };
 
-    const head = bd.circle(cx, cy - 55, r * 1.15, { ...opts, label: 'buddy-head', density: 0.0015 });
-    const torso = bd.rectangle(cx, cy - 14, r * 1.7, r * 1.5, { ...opts, label: 'buddy-torso', density: 0.003 });
-    const leftArm = bd.circle(cx - r - 6, cy - 26, r * 0.55, { ...opts, label: 'buddy-arm' });
-    const rightArm = bd.circle(cx + r + 6, cy - 26, r * 0.55, { ...opts, label: 'buddy-arm' });
-    const leftLeg = bd.circle(cx - r * 0.45, cy + 28, r * 0.65, { ...opts, label: 'buddy-leg' });
-    const rightLeg = bd.circle(cx + r * 0.45, cy + 28, r * 0.65, { ...opts, label: 'buddy-leg' });
+    const head = bd.circle(cx, cy - 45, r * 1.15, { ...opts, label: 'buddy-head', density: 0.0005 });
+    const torso = bd.rectangle(cx, cy - 10, r * 1.7, r * 1.5, { ...opts, label: 'buddy-torso', density: 0.006 });
+    const leftArm = bd.circle(cx - r - 12, cy - 15, r * 0.55, { ...opts, label: 'buddy-arm' });
+    const rightArm = bd.circle(cx + r + 12, cy - 15, r * 0.55, { ...opts, label: 'buddy-arm' });
+    const leftLeg = bd.circle(cx - 10, cy + 20, r * 0.65, { ...opts, label: 'buddy-leg' });
+    const rightLeg = bd.circle(cx + 10, cy + 20, r * 0.65, { ...opts, label: 'buddy-leg' });
+
+    // Lock torso upright
+    Body.setInertia(torso, Infinity);
 
     parts.push(head, torso, leftArm, rightArm, leftLeg, rightLeg);
 
     constraints.push(
-      Constraint.create({ bodyA: head, bodyB: torso, stiffness: 0.9, damping: 0.08 }),
-      Constraint.create({ bodyA: leftArm, bodyB: torso, stiffness: 0.7, damping: 0.12 }),
-      Constraint.create({ bodyA: rightArm, bodyB: torso, stiffness: 0.7, damping: 0.12 }),
-      Constraint.create({ bodyA: leftLeg, bodyB: torso, stiffness: 0.8, damping: 0.08 }),
-      Constraint.create({ bodyA: rightLeg, bodyB: torso, stiffness: 0.8, damping: 0.08 }),
+      // Two constraints for the neck to lock rotation
+      Constraint.create({ bodyA: head, pointA: { x: -10, y: 15 }, bodyB: torso, pointB: { x: -10, y: -15 }, stiffness: 0.9, damping: 0.1 }),
+      Constraint.create({ bodyA: head, pointA: { x: 10, y: 15 }, bodyB: torso, pointB: { x: 10, y: -15 }, stiffness: 0.9, damping: 0.1 }),
+      // Shoulders
+      Constraint.create({ bodyA: leftArm, bodyB: torso, pointB: { x: -15, y: -5 }, stiffness: 0.8, damping: 0.1 }),
+      Constraint.create({ bodyA: rightArm, bodyB: torso, pointB: { x: 15, y: -5 }, stiffness: 0.8, damping: 0.1 }),
+      // Hips
+      Constraint.create({ bodyA: leftLeg, bodyB: torso, pointB: { x: -10, y: 15 }, stiffness: 0.9, damping: 0.1 }),
+      Constraint.create({ bodyA: rightLeg, bodyB: torso, pointB: { x: 10, y: 15 }, stiffness: 0.9, damping: 0.1 }),
     );
 
     return { bodies: parts, constraints };
@@ -195,6 +239,14 @@ export class GameEngine {
         Body.applyForce(b, b.position, { x: dir.x * fm, y: dir.y * fm - fm * 0.5 });
         const dmg = Math.floor((radius / Math.max(dist, 10)) * 4);
         if (dmg > 0) this.applyDamage(dmg);
+      }
+    }
+    for (const p of this.props) {
+      const dist = Vector.magnitude(Vector.sub(p.position, { x, y }));
+      if (dist < radius + 150) {
+        const fm = (radius / Math.max(dist, 10)) * 0.05;
+        const dir = Vector.normalise(Vector.sub(p.position, { x, y }));
+        Body.applyForce(p, p.position, { x: dir.x * fm, y: dir.y * fm - fm * 0.2 });
       }
     }
 
@@ -307,9 +359,8 @@ export class GameEngine {
       const d = Vector.magnitude(Vector.sub(b.position, { x, y }));
       if (d < 70) { hit = true; break; }
     }
-    if (!hit) return;
 
-    if (isAutoFire && item.id !== 'machinegun' && item.id !== 'flamethrower') return;
+    if (isAutoFire) return;
 
     switch (item.id) {
       case 'fist': {
@@ -321,14 +372,17 @@ export class GameEngine {
             Body.applyForce(b, b.position, { x: dir.x * power, y: (dir.y * power) - 0.025 });
           }
         }
-        this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#ffffff', 10);
-        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
-        this.state.mood = 'angry';
-        this.state.moodTimer = 30;
+        if (hit) {
+          this.applyDamage(item.damage);
+          this.spawnParticles(x, y, '#ffffff', 10);
+          this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
+          this.state.mood = 'angry';
+          this.state.moodTimer = 30;
+        }
         break;
       }
       case 'tickle': {
+        if (!hit) break;
         for (const b of buddies) {
           Body.applyForce(b, b.position, {
             x: (Math.random() - 0.5) * 0.003,
@@ -339,6 +393,7 @@ export class GameEngine {
         break;
       }
       case 'comfort': {
+        if (!hit) break;
         for (const b of buddies) {
           Body.applyForce(b, b.position, { x: (Math.random() - 0.5) * 0.0015, y: -0.0015 });
         }
@@ -346,258 +401,62 @@ export class GameEngine {
         break;
       }
       case 'treat': {
-        for (const b of buddies) {
-          Body.applyForce(b, b.position, { x: (Math.random() - 0.5) * 0.002, y: -0.004 });
-        }
-        this.applyCare(x, y, 15, 18, 4, 'Snack accepted. Trust climbs.');
+        const treat = bd.rectangle(x, y, 20, 10, {
+          restitution: 0.4, friction: 0.6, density: 0.002, label: 'prop-treat',
+        });
+        World.add(this.engine.world, treat);
+        this.props.push(treat);
         break;
       }
       case 'grenade': {
-        this.spawnExplosion(x, y, 30);
-        this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
-        break;
-      }
-      case 'pistol': {
-        const head = buddies.find(b => b.label === 'buddy-head') || buddies[0];
-        const dir = Vector.normalise(Vector.sub(head.position, { x: this.mousePos.x, y: this.mousePos.y }));
-        const power = 0.06;
-        Body.applyForce(head, head.position, { x: dir.x * power, y: dir.y * power - power * 0.15 });
-        this.applyDamage(item.damage);
-        this.spawnParticles(this.mousePos.x, this.mousePos.y, '#ffdd00', 8);
-        this.spawnParticles(this.mousePos.x, this.mousePos.y, '#ffffff', 4);
-        this.spawnParticles(head.position.x, head.position.y, '#ff8800', 6);
-        this.state.screenshake = Math.min(this.state.screenshake + 3, 8);
-        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
-        break;
-      }
-      case 'shotgun': {
-        for (let i = 0; i < 5; i++) {
-          const target = buddies[Math.floor(Math.random() * buddies.length)];
-          const spreadX = (Math.random() - 0.5) * 0.025;
-          const spreadY = (Math.random() - 0.5) * 0.025;
-          const dir = Vector.normalise(Vector.sub(target.position, {
-            x: x + (Math.random() - 0.5) * 50,
-            y: y + (Math.random() - 0.5) * 50,
-          }));
-          Body.applyForce(target, target.position, {
-            x: dir.x * 0.06 + spreadX,
-            y: dir.y * 0.06 + spreadY - 0.015,
-          });
-        }
-        this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#ff8800', 20);
-        this.spawnParticles(x, y, '#ffcc00', 10);
-        this.state.screenshake = Math.min(this.state.screenshake + 6, 12);
-        this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
-        break;
-      }
-      case 'machinegun': {
-        const target = buddies[Math.floor(Math.random() * buddies.length)];
-        const dir = Vector.normalise(Vector.sub(target.position, { x: this.mousePos.x, y: this.mousePos.y }));
-        Body.applyForce(target, target.position, { x: dir.x * 0.03, y: dir.y * 0.03 - 0.005 });
-        this.applyDamage(item.damage);
-        this.spawnParticles(this.mousePos.x + (Math.random() - 0.5) * 8, this.mousePos.y + (Math.random() - 0.5) * 8, '#ffdd00', 4);
-        this.state.screenshake = Math.min(this.state.screenshake + 1, 6);
-        break;
-      }
-      case 'flamethrower': {
-        for (const b of buddies) {
-          Body.applyForce(b, b.position, {
-            x: (Math.random() - 0.5) * 0.008,
-            y: -0.018 - Math.random() * 0.012,
-          });
-        }
-        this.applyDamage(Math.max(1, Math.floor(item.damage / 3)));
-        this.spawnParticles(x + (Math.random() - 0.5) * 50, y + (Math.random() - 0.5) * 20, '#ff4400', 10);
-        this.spawnParticles(x + (Math.random() - 0.5) * 35, y + (Math.random() - 0.5) * 10, '#ffaa00', 6);
-        this.state.mood = 'scared';
-        this.state.moodTimer = 20;
-        break;
-      }
-      case 'missile': {
-        this.spawnExplosion(x, y, 55);
-        this.state.screenshake = Math.min(this.state.screenshake + 12, 18);
-        this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
-        break;
-      }
-      case 'bowling': {
-        for (const b of buddies) {
-          const d = Vector.magnitude(Vector.sub(b.position, { x, y }));
-          if (d < 110) {
-            const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-            Body.applyForce(b, b.position, { x: dir.x * 0.08, y: dir.y * 0.08 - 0.06 });
-          }
-        }
-        this.applyDamage(item.damage);
-        this.state.screenshake = Math.min(this.state.screenshake + 8, 14);
-        this.spawnParticles(x, y, '#555555', 15);
-        this.spawnParticles(x, y, '#888888', 10);
-        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
-        break;
-      }
-      case 'fireball': {
-        for (const b of buddies) {
-          const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-          Body.applyForce(b, b.position, {
-            x: dir.x * 0.006 * item.damage,
-            y: dir.y * 0.006 * item.damage - 0.02,
-          });
-        }
-        this.applyDamage(item.damage);
-        this.spawnParticles(x + (Math.random() - 0.5) * 70, y + (Math.random() - 0.5) * 30, '#ff4400', 20);
-        this.spawnParticles(x + (Math.random() - 0.5) * 50, y + (Math.random() - 0.5) * 20, '#ffdd00', 12);
-        this.state.screenshake = Math.min(this.state.screenshake + 4, 10);
-        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
+        const grenade = bd.circle(x, y, 10, {
+          restitution: 0.6, friction: 0.4, density: 0.004, label: 'prop-grenade',
+        });
+        World.add(this.engine.world, grenade);
+        this.props.push(grenade);
+        this.activeGrenades.push({ body: grenade, timer: 90 }); // ~3 seconds at 30fps
         break;
       }
       case 'mine': {
-        for (const b of buddies) {
-          const d = Vector.magnitude(Vector.sub(b.position, { x, y }));
-          if (d < 130) {
-            Body.applyForce(b, b.position, {
-              x: (Math.random() - 0.5) * 0.035,
-              y: -0.1 - (130 - d) * 0.0008,
-            });
-          }
-        }
-        this.applyDamage(item.damage);
-        this.spawnExplosion(x, y, 35);
-        this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
+        const mine = bd.rectangle(x, y, 24, 8, {
+          restitution: 0.1, friction: 0.8, density: 0.01, label: 'prop-mine',
+        });
+        World.add(this.engine.world, mine);
+        this.props.push(mine);
         break;
       }
-      case 'stun': {
-        for (const b of buddies) {
-          Body.setVelocity(b, { x: 0, y: 0 });
-          Body.setAngularVelocity(b, 0);
-        }
-        this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#00d4ff', 25);
-        this.spawnParticles(x, y, '#ffffff', 12);
-        this.state.mood = 'scared';
-        this.state.moodTimer = 90;
-        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
+      case 'bowling': {
+        const ball = bd.circle(x, y, 25, {
+          restitution: 0.2, friction: 0.3, density: 0.015, label: 'prop-bowling',
+        });
+        World.add(this.engine.world, ball);
+        this.props.push(ball);
         break;
       }
       case 'rubberballs': {
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 3; i++) {
           const bx = x + (Math.random() - 0.5) * 40;
-          const by = Math.min(y, ROOM_HEIGHT - 50) + (Math.random() - 0.5) * 20;
-          const ball = bd.circle(bx, by, 6 + Math.random() * 5, {
-            restitution: 0.9, friction: 0.2, frictionAir: 0.005, density: 0.001, label: 'prop',
+          const by = y + (Math.random() - 0.5) * 20;
+          const ball = bd.circle(bx, by, 8 + Math.random() * 6, {
+            restitution: 0.9, friction: 0.2, frictionAir: 0.005, density: 0.001, label: 'prop-rubberball',
           });
           Body.applyForce(ball, ball.position, {
-            x: (Math.random() - 0.5) * 0.06,
-            y: -0.06 - Math.random() * 0.04,
+            x: (Math.random() - 0.5) * 0.02,
+            y: -0.02 - Math.random() * 0.02,
           });
           World.add(this.engine.world, ball);
           this.props.push(ball);
         }
-        this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#ff6b6b', 8);
-        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
-        break;
-      }
-      case 'flail': {
-        const target = buddies[Math.floor(Math.random() * buddies.length)];
-        const dir = Vector.normalise(Vector.sub(target.position, { x, y }));
-        Body.applyForce(target, target.position, { x: dir.x * 0.06, y: dir.y * 0.06 - 0.045 });
-        Body.setAngularVelocity(target, target.angularVelocity + (Math.random() - 0.5) * 0.4);
-        this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#8e44ad', 14);
-        this.state.screenshake = Math.min(this.state.screenshake + 5, 10);
-        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
-        break;
-      }
-      case 'molotov': {
-        this.spawnExplosion(x, y, 30);
-        for (let i = 0; i < 20; i++) {
-          this.state.particles.push({
-            x: x + (Math.random() - 0.5) * 60,
-            y: y + (Math.random() - 0.5) * 20,
-            vx: (Math.random() - 0.5) * 2.5,
-            vy: -Math.random() * 4 - 1,
-            life: 30 + Math.random() * 30,
-            maxLife: 60,
-            color: Math.random() < 0.5 ? '#ff4400' : '#ffaa00',
-            size: 3 + Math.random() * 4,
-          });
-        }
-        this.applyDamage(item.damage);
-        this.state.screenshake = Math.min(this.state.screenshake + 6, 10);
-        this.spawnMoneyPopup(x, y - 30, Math.floor(item.damage * item.moneyMultiplier));
         break;
       }
       case 'gravity': {
-        const pullPoint = { x, y };
-        for (const b of buddies) {
-          const d = Vector.magnitude(Vector.sub(pullPoint, b.position));
-          if (d < 250) {
-            const dir = Vector.normalise(Vector.sub(pullPoint, b.position));
-            Body.applyForce(b, b.position, {
-              x: dir.x * 0.05 * (250 / Math.max(d, 20)),
-              y: dir.y * 0.05 * (250 / Math.max(d, 20)),
-            });
-          }
-        }
-        for (const b of this.props) {
-          const d = Vector.magnitude(Vector.sub(pullPoint, b.position));
-          if (d < 250) {
-            const dir = Vector.normalise(Vector.sub(pullPoint, b.position));
-            Body.applyForce(b, b.position, {
-              x: dir.x * 0.03 * (250 / Math.max(d, 20)),
-              y: dir.y * 0.03 * (250 / Math.max(d, 20)),
-            });
-          }
-        }
-        this.spawnParticles(x, y, '#9b59b6', 30);
-        this.state.screenshake = Math.min(this.state.screenshake + 2, 6);
+        const bh = bd.circle(x, y, 30, {
+          isStatic: true, isSensor: true, label: 'prop-blackhole',
+        });
+        World.add(this.engine.world, bh);
+        this.props.push(bh);
+        this.activeBlackholes.push({ body: bh, timer: 150 }); // 5 seconds
         break;
-      }
-      case 'magicorb': {
-        for (const b of buddies) {
-          const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-          Body.applyForce(b, b.position, { x: dir.x * 0.09, y: dir.y * 0.09 - 0.07 });
-        }
-        for (const b of this.props) {
-          const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-          Body.applyForce(b, b.position, { x: dir.x * 0.06, y: dir.y * 0.06 });
-        }
-        this.applyDamage(item.damage);
-        this.spawnParticles(x, y, '#9b59b6', 35);
-        this.spawnParticles(x, y, '#ffd700', 20);
-        this.state.screenshake = Math.min(this.state.screenshake + 10, 14);
-        this.spawnMoneyPopup(x, y - 20, Math.floor(item.damage * item.moneyMultiplier));
-        break;
-      }
-      case 'radio': {
-        for (const b of buddies) {
-          Body.applyForce(b, b.position, {
-            x: (Math.random() - 0.5) * 0.012,
-            y: -0.012 - Math.random() * 0.01,
-          });
-        }
-        this.applyCare(x, y, 12, 20, 10, 'Buddy found the beat. Stress drops.');
-        const discoColors = ['#ff6b6b', '#ffd700', '#2ecc71', '#3498db', '#9b59b6'];
-        for (let i = 0; i < 25; i++) {
-          this.state.particles.push({
-            x: x + (Math.random() - 0.5) * 100,
-            y: y + (Math.random() - 0.5) * 50,
-            vx: (Math.random() - 0.5) * 3.5,
-            vy: -Math.random() * 5 - 2,
-            life: 40 + Math.random() * 30,
-            maxLife: 70,
-            color: discoColors[Math.floor(Math.random() * discoColors.length)],
-            size: 2 + Math.random() * 3,
-          });
-        }
-        break;
-      }
-      default: {
-        for (const b of buddies) {
-          const dir = Vector.normalise(Vector.sub(b.position, { x, y }));
-          Body.applyForce(b, b.position, { x: dir.x * 0.03, y: -0.03 });
-        }
-        this.applyDamage(10);
       }
     }
   }
@@ -605,6 +464,50 @@ export class GameEngine {
     // Update
 
   private updateParticles(): void {
+    for (let i = this.activeBlackholes.length - 1; i >= 0; i--) {
+      const bh = this.activeBlackholes[i];
+      bh.timer--;
+      const pos = bh.body.position;
+      
+      // Suck in buddy
+      for (const b of this.state.buddyBodies) {
+        const d = Vector.magnitude(Vector.sub(pos, b.position));
+        if (d < 400 && d > 10) {
+          const dir = Vector.normalise(Vector.sub(pos, b.position));
+          Body.applyForce(b, b.position, { x: dir.x * 0.015, y: dir.y * 0.015 });
+        }
+      }
+      
+      // Suck in props
+      for (const p of this.props) {
+        if (p === bh.body) continue;
+        const d = Vector.magnitude(Vector.sub(pos, p.position));
+        if (d < 400 && d > 10) {
+          const dir = Vector.normalise(Vector.sub(pos, p.position));
+          Body.applyForce(p, p.position, { x: dir.x * 0.02, y: dir.y * 0.02 });
+        }
+      }
+
+      this.spawnParticles(pos.x + (Math.random() - 0.5) * 80, pos.y + (Math.random() - 0.5) * 80, '#9b59b6', 1);
+
+      if (bh.timer <= 0) {
+        this.removeProp(bh.body);
+        this.activeBlackholes.splice(i, 1);
+        this.spawnExplosion(pos.x, pos.y, 60);
+      }
+    }
+
+    for (let i = this.activeGrenades.length - 1; i >= 0; i--) {
+      const g = this.activeGrenades[i];
+      g.timer--;
+      if (g.timer <= 0) {
+        this.spawnExplosion(g.body.position.x, g.body.position.y, 40);
+        this.applyDamage(40);
+        this.removeProp(g.body);
+        this.activeGrenades.splice(i, 1);
+      }
+    }
+
     for (let i = this.state.particles.length - 1; i >= 0; i--) {
       const p = this.state.particles[i];
       p.x += p.vx;
@@ -726,7 +629,7 @@ export class GameEngine {
       this.lastTimestamp = ts;
 
       Engine.update(this.engine, d);
-      updateAI(this.state.buddyBodies, this.ai);
+      updateAI(this.state.buddyBodies, this.ai, this.props);
       this.enforceBounds();
       if (this.isMouseDown) {
         this.shootTimer--;
@@ -750,7 +653,7 @@ export class GameEngine {
       this.ctx.save();
       drawRoom(this.ctx, this.state.screenshake);
       drawProps(this.ctx, this.props);
-      drawBuddy(this.ctx, this.state.buddyBodies, this.state.baseColor, this.state.mood);
+      drawBuddy(this.ctx, this.state.buddyBodies, this.state.baseColor, this.state.mood, this.ai.state);
       drawParticles(this.ctx, this.state.particles);
       drawMoneyPopups(this.ctx, this.state.moneyPopups);
       drawMoodIndicator(this.ctx, this.state.mood);
